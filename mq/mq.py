@@ -18,6 +18,8 @@ from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
 
+import time
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ class MQ(object):
   """
   variable_x = 'x'
   variable_y = 'y'
-  operator_mul = '*'
+  operator_mul = ' * '
   operator_power = '**'
   
   def __init__(self, n, m):
@@ -233,59 +235,86 @@ class MIA(object):
   Matsumoto-Imai
   http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html
   """
-  variable_lambda = 'L' 
+  variable_lambda = 'L'
   
   def __init__(self, MQ):
     self.logger = logging.getLogger('MIA')
     self.logger.info('creating an instance of MIA')
     self.mq = MQ
-    self._P = self.create_equation()
-    # GF(2)[MQ.variable_x](GF2X_BuildIrred_list(MQ.n))
-    self.ired_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(MQ.n))
-    self.lamb = 0
+    self._P = None
+    self.irred_polynomial = None
+    self.irred_polynomial_rem = {}
+    self.lamb = None
     self.h = 0
     self.create_trapdoor()
     
   def create_trapdoor(self):
-    print self.ired_polynomial
-    array_lamb = []
+    self.lamb = self.compute_lambda(self.mq.n)
+    x_equation = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
+    self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildIrred_list(self.mq.n))
+    #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
+    self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
     
-    first = 2 ** self.mq.n - 1
+    count = self.mq.n + 1
+    var_list = ['x' + str(i) for i in range(1, count)]
+    var_list.append(self.variable_lambda)
+    
+    
+    print(' + '.join(x_equation))
+    #http://doc.sagemath.org/html/en/tutorial/tour_polynomial.html
+    
+    R = PolynomialRing(GF(2), var_list)
+    S = R.quotient(' + '.join(x_equation), var_list)
+    X = S.gen()
+    print(X1)
+    monomials
+
+#    R = GF(2)['x1, x2, x3, L'].gens()
+#    X = (R[0]*R[3]**0 + R[1]*R[3]**1 + R[2]*R[3]**2 )
+#    print(X)
+#    X2 =(R[0]*R[3]**0 + R[1]*R[3]**1 + R[2]*R[3]**2 )**2
+#    print(X2)
+#    print(X2[0])
+#    power = 2 ** self.lamb + 1
+    #print(X)
+    
+  def compute_lambda(self, n):
+    first = 2 ** n - 1
     lamb = 1
     while True:
       second = 2 ** lamb + 1
-      if second > first:
-        break
-      print first, second
-      if gcd(first, second) == 1:
-        array_lamb.append(lamb)
-        #break
-      lamb += 1
-    
-    print array_lamb
-    if array_lamb:
-      self.lamb = array_lamb[0]
-    else:
-      raise ValueError('Lambda not found for n = ' + str(self.mq.n))
-    
-    R = PolynomialRing(GF(2), [MQ.variable_x, self.variable_lambda])
-    x = R.gen()
-    S = R.quotient('x**3 + x + 1', [MQ.variable_x, self.variable_lambda])
-    a = S.gen()
-    for i in range(7):
-      print(a**i) 
       
-    S = R.quotient('x**3 + x + 1', MQ.variable_x)
-    
-    
+      if first < second:
+        raise ValueError('Lambda not found for n = ' + str(self.mq.n))
+
+      if gcd(first, second) == 1:
+        return lamb
+      
+      lamb += 1
+  
   def create_equation(self):
     equation = [MQ.variable_x + '1']
-        
-    size = self.mq.n + 1
-    for i in range(1, size):
+
+    for i in range(1, self.mq.n):
       equation.append(MQ.variable_x + str(i + 1) + MQ.operator_mul + MIA.variable_lambda + MQ.operator_power + str(i))
       
     return equation
+    
+  def compute_remainder(self, irreducible_polynomial):
+    R = PolynomialRing(GF(2), 'x')
+    S = R.quotient(irreducible_polynomial, 'x')
+    a = S.gen()
+    
+    irred_polynomial_rem = {}
+    
+    irred_polynomial_rem['x1'] = a**1
+    count = self.mq.n**2 - 1
+    for i in range(2, count):
+        irred_polynomial_rem['x' + str(i)] = irred_polynomial_rem['x' + str(i - 1)]**2
+    
+    return irred_polynomial_rem
+
+
     
 class HFE(MQ):
   """
@@ -373,7 +402,7 @@ def create_polynomial(elements, degree):
 
 # 1. pozriet kolko suctov premennych moze byt v jednej rovnici a kolko ich je minimum 
 if __name__ == "__main__":    
-  mq = MQ(5, 24)
+  mq = MQ(3, 24)
   
   #sts = STS(mq, 4, [3, 4, 5, 5], [6, 6, 6, 6])
   mia = MIA(mq)
