@@ -13,6 +13,7 @@ import logging
 from random import randint
 from random import shuffle
 from sets import Set
+from pprint import pprint
 import sys
 from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
@@ -234,6 +235,14 @@ class MIA(object):
   """
   Matsumoto-Imai
   http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html
+  1. vygenerovat lambdu ak je to mozne -> GCD(2^n - 1, 2^L + 1) == 1
+  2. vygenerovat vyraz v tvare x1 + x2*L^1 + x3*L^2 + ... x_n*L^n-1
+  3. vygenerovat ireducibilny polynom stupna n
+  4. zistit zvysky po deleni pre zvoleny ireducibilny polynom -> napr pre x3 + x + 1 = x1->x1, x2->x2, x3->x + 1, x4->x^2 + x, ...
+  5. umocnit vygenerovany vyraz na 2^L + 1
+  6. za labdy stupna vacsieho ako n dosadit zvysky po deleni
+  7. roznasobit zatvorky
+  8. vyjmut premenne pre dane lambdy
   """
   variable_lambda = 'L'
   
@@ -250,11 +259,40 @@ class MIA(object):
     
   def create_trapdoor(self):
     self.lamb = self.compute_lambda(self.mq.n)
-    x_equation = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
+    X = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
     self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildIrred_list(self.mq.n))
     #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
     
+    pprint(self.irred_polynomial_rem)
+    
+#    l2 = set(['x1', 'x3', 'x4', 'x1x2'])
+#    l3 = set(['x2', 'x3', 'x4', 'x1x2x3'])
+#    l2 ^= l3
+#    print l2
+  
+    X = {};
+    X_new = {};
+    for i in range(self.mq.n):
+      X[MIA.variable_lambda + str(i)] = set([MQ.variable_x + str(i + 1)])
+      
+    steps = 2 ** self.lamb # 2^labda + 1
+    for i in range(1):
+      for l in X:
+        power = int(l[1:]) * 2 # get power of actual lambda
+        print(power)
+        if power >= self.mq.n:
+          keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + str(power)]).split(' + ')
+          
+        
+        
+    
+    
+    pprint(X)
+#    for v in X:
+#      print v, X[v]
+    
+    return
     count = self.mq.n + 1
     var_list = ['x' + str(i) for i in range(1, count)]
     var_list.append(self.variable_lambda)
@@ -301,21 +339,20 @@ class MIA(object):
     return equation
     
   def compute_remainder(self, irreducible_polynomial):
-    R = PolynomialRing(GF(2), 'x')
-    S = R.quotient(irreducible_polynomial, 'x')
+    R = PolynomialRing(GF(2), MIA.variable_lambda)
+    S = R.quotient(irreducible_polynomial, MIA.variable_lambda)
     a = S.gen()
     
-    irred_polynomial_rem = {}
+    irred_polynomial_rem = {MIA.variable_lambda + '^0': a ** 0} #irred_polynomial_rem[MIA.variable_lambda + '0'] = a**0
     
-    irred_polynomial_rem['x1'] = a**1
-    count = self.mq.n**2 - 1
-    for i in range(2, count):
-        irred_polynomial_rem['x' + str(i)] = irred_polynomial_rem['x' + str(i - 1)]**2
-    
+    count = self.mq.n ** 2 - 2
+    for i in range(1, count):
+      irred_polynomial_rem[MIA.variable_lambda + '^' + str(i)] = irred_polynomial_rem[MIA.variable_lambda + '^' + str(i - 1)] * a
+        
     return irred_polynomial_rem
 
 
-    
+
 class HFE(MQ):
   """
   Hidden Field Equations
@@ -400,7 +437,6 @@ def create_polynomial(elements, degree):
   
   return result
 
-# 1. pozriet kolko suctov premennych moze byt v jednej rovnici a kolko ich je minimum 
 if __name__ == "__main__":    
   mq = MQ(3, 24)
   
