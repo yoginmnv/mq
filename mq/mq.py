@@ -271,10 +271,9 @@ class MIA(object):
 #    l2 ^= l3
 #    print l2
   
-    X = {};
-    X_new = {};
-    for i in range(self.mq.n):
-      X[MIA.variable_lambda + str(i)] = set([MQ.variable_x + str(i + 1)])
+    pprint(X)
+    return
+    X_new = {}
       
     steps = 2 ** self.lamb # 2^labda + 1
     for i in range(1):
@@ -331,12 +330,12 @@ class MIA(object):
       lamb += 1
   
   def create_equation(self):
-    equation = [MQ.variable_x + '1']
-
-    for i in range(1, self.mq.n):
-      equation.append(MQ.variable_x + str(i + 1) + MQ.operator_mul + MIA.variable_lambda + MQ.operator_power + str(i))
+    X = {};
+    
+    for i in range(self.mq.n):
+      X[MIA.variable_lambda + '^' + str(i)] = set([MQ.variable_x + '^' + str(i + 1)])
       
-    return equation
+    return X
     
   def compute_remainder(self, irreducible_polynomial):
     R = PolynomialRing(GF(2), MIA.variable_lambda)
