@@ -259,50 +259,104 @@ class MIA(object):
     
   def create_trapdoor(self):
     self.lamb = self.compute_lambda(self.mq.n)
-    X = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
+    left_side = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
+    right_side = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
+    #left_side = right_side.copy()
+    #left_side = dict(right_side)
     self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildIrred_list(self.mq.n))
     #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
     
+    
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
-    # first part: a = X ^ (2 ^ lambda)
+    # first part: a = left_side ^ (2 ^ lambda)
     count_of_squaring = 2 ** self.lamb
     for counter in range(count_of_squaring):
       X_squared = {}
       
-      for key in X:
+      for key in left_side:
         exponent = int(key[2:]) * 2 # get exponent of actual lambda: L^x
-        print('Key from X:' + key + ' -> ' + str(exponent))
+        #print('Key from X:' + key + ' -> ' + str(exponent))
         
         if exponent >= self.mq.n:
           ired_keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + str(exponent)]).split(' + ')
-          print('Keys ', ired_keys)
+          #print('Keys ', ired_keys)
           
           for ired_key in ired_keys:
-            # fix as sagemath return L^1 as L
-#            if ired_key == '1':
-#              ired_key = MIA.variable_lambda + '^0'
-#            if ired_key == MIA.variable_lambda:
-#              ired_key = MIA.variable_lambda + '^1'
+            # fix as sagemath return L^0 as 1 and L^1 as L
+            if ired_key == '1':
+              ired_key = MIA.variable_lambda + '^0'
+            elif ired_key == MIA.variable_lambda:
+              ired_key = MIA.variable_lambda + '^1'
             
             if ired_key in X_squared:
-              X_squared[ired_key] ^= X[key] # new set with elements in either s or t but not both
+              X_squared[ired_key] ^= left_side[key] # new set with elements in either s or t but not both
             else:
-              X_squared[ired_key] = X[key]
+              X_squared[ired_key] = left_side[key]
             
-            print('In loop if ', X_squared)
+            #print('In loop if ', X_squared)
         else:
-          print('Tu ', X[key])
-          X_squared[MIA.variable_lambda + '^' + str(exponent)] = X[key]
-          print('In loop el ', X_squared)
-      print('------------------')
-      X = X_squared
-    print('Result ', X)
+          #print('Here ', left_side[key])
+          X_squared[MIA.variable_lambda + '^' + str(exponent)] = left_side[key]
+          #print('In loop el ', X_squared)
+      #print('------------------')
+      left_side = X_squared      
+    
     # second part: P`(x) = a * X ^ 1
+    pprint(left_side)
+    pprint(right_side)
+    print('---------')
+    R = {}
     
+    for left_key in left_side:
+      left_key_exponent = int(left_key[2:])
+      
+      for left_value in left_side[left_key]:
+        print("Left key and value", left_key, left_value)
+        for right_key in right_side:
+          right_key_exponent = int(right_key[2:])
+          
+          for right_value in right_side[right_key]:
+            print("Right key and value", right_key, right_value)
+            exponent = str(left_key_exponent + right_key_exponent)
+            print(exponent)
+            
+            if int(exponent) >= self.mq.n:
+              ired_keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + exponent]).split(' + ')
+              
+              for ired_key in ired_keys:
+                exit(0)
+                # fix as sagemath return L^0 as 1 and L^1 as L
+                if ired_key == '1':
+                  ired_key = MIA.variable_lambda + '^0'
+                elif ired_key == MIA.variable_lambda:
+                  ired_key = MIA.variable_lambda + '^1'
+
+#                if left_value == right_value:
+#                  
+#                else:
+#                  product = left_value + '*' + right_value
+#                  
+#                if ired_key in X_squared:
+#                  R[ired_key] ^= left_side[key] # new set with elements in either s or t but not both
+#                else:
+#                  R[ired_key] = left_side[key]
+                  
+            else:
+              if left_value == right_value:
+                R[MIA.variable_lambda + '^' + exponent] = left_value
+              else:
+                product = left_value + '*' + right_value
+                
+                if MIA.variable_lambda + '^' + exponent in R:
+                  R[MIA.variable_lambda + '^' + exponent] ^= product # new set with elements in either s or t but not both
+                else:
+                  R[MIA.variable_lambda + '^' + exponent] = product # new set with elements from both s and t
+                  
+              print(R[MIA.variable_lambda + '^' + exponent])
+    pprint(R)
     
-    return
 #    R = GF(2)['x1, x2, x3, L'].gens()
 #    X = (R[0]*R[3]**0 + R[1]*R[3]**1 + R[2]*R[3]**2 )
 #    print(X)
@@ -329,14 +383,9 @@ class MIA(object):
   def create_equation(self):
     X = {};
     
-    if self.mq.n > 0:
-      X['0'] = set(['1'])
-    if self.mq.n > 1:
-      X['1'] = set([MIA.variable_lambda])
-      
-    for i in range(2, self.mq.n):
+    for i in range(self.mq.n):
       X[MIA.variable_lambda + '^' + str(i)] = set([MQ.variable_x + str(i + 1)])
-      
+    
     return X
     
   def compute_remainder(self, irreducible_polynomial):
@@ -344,17 +393,10 @@ class MIA(object):
     S = R.quotient(irreducible_polynomial, MIA.variable_lambda)
     a = S.gen()
     
-    #irred_polynomial_rem = {MIA.variable_lambda + '^0': a ** 0} #irred_polynomial_rem[MIA.variable_lambda + '0'] = a**0
-    irred_polynomial_rem = {}
-    if self.mq.n > 0:
-      irred_polynomial_rem['0'] = a ** 0
-    if self.mq.n > 1:
-      irred_polynomial_rem['L'] = irred_polynomial_rem['0'] * a
-    if self.mq.n > 2:
-      irred_polynomial_rem['L^2'] = irred_polynomial_rem['L'] * a
-      
+    irred_polynomial_rem = {MIA.variable_lambda + '^0': a ** 0} #irred_polynomial_rem[MIA.variable_lambda + '0'] = a**0
+    
     count = self.mq.n ** 2 - 2
-    for i in range(3, count):
+    for i in range(1, count):
       irred_polynomial_rem[MIA.variable_lambda + '^' + str(i)] = irred_polynomial_rem[MIA.variable_lambda + '^' + str(i - 1)] * a
     
     return irred_polynomial_rem
