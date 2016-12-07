@@ -264,48 +264,41 @@ class MIA(object):
     #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
     
-    pprint(self.irred_polynomial_rem)
+    # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
-#    l2 = set(['x1', 'x3', 'x4', 'x1x2'])
-#    l3 = set(['x2', 'x3', 'x4', 'x1x2x3'])
-#    l2 ^= l3
-#    print l2
-  
-    pprint(X)
-    return
-    X_new = {}
+    # first part: a = X ^ (2 ^ lambda)
+    count_of_squaring = 2 ** self.lamb
+    for counter in range(count_of_squaring):
+      X_squared = {}
       
-    steps = 2 ** self.lamb # 2^labda + 1
-    for i in range(1):
-      for l in X:
-        power = int(l[1:]) * 2 # get power of actual lambda
-        print(power)
-        if power >= self.mq.n:
-          keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + str(power)]).split(' + ')
+      for key in X:
+        print('Key from X:' + key)
+        exponent = int(key[2:]) * 2 # get exponent of actual lambda: L^x
+        
+        if exponent >= self.mq.n:
+          ired_keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + str(exponent)]).split(' + ')
+          print('Keys ', ired_keys)
           
-        
-        
+          for ired_key in ired_keys:
+            # fix as sagemath return L^1 as L
+            if ired_key == MIA.variable_lambda:
+              ired_key = MIA.variable_lambda + '^1'
+            
+            if ired_key in X_squared:
+              X_squared[ired_key] ^= X[key] # new set with elements in either s or t but not both
+            else:
+              X_squared[ired_key] = X[key]
+            
+        else:
+          X_squared[MIA.variable_lambda + '^' + str(exponent)] = X[key]
+          print('In loop ', X_squared)
+      print('------------------')
+      X = X_squared
     
+    # second part: P`(x) = a * X ^ 1
     
-    pprint(X)
-#    for v in X:
-#      print v, X[v]
     
     return
-    count = self.mq.n + 1
-    var_list = ['x' + str(i) for i in range(1, count)]
-    var_list.append(self.variable_lambda)
-    
-    
-    print(' + '.join(x_equation))
-    #http://doc.sagemath.org/html/en/tutorial/tour_polynomial.html
-    
-    R = PolynomialRing(GF(2), var_list)
-    S = R.quotient(' + '.join(x_equation), var_list)
-    X = S.gen()
-    print(X1)
-    monomials
-
 #    R = GF(2)['x1, x2, x3, L'].gens()
 #    X = (R[0]*R[3]**0 + R[1]*R[3]**1 + R[2]*R[3]**2 )
 #    print(X)
