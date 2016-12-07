@@ -309,18 +309,18 @@ class MIA(object):
     #print(X)
     
   def compute_lambda(self, n):
-    first = 2 ** n - 1
     lamb = 1
-    while True:
-      second = 2 ** lamb + 1
-      
-      if first < second:
-        raise ValueError('Lambda not found for n = ' + str(self.mq.n))
-
+    first = 2 ** n - 1
+    second = 2 ** lamb + 1
+    
+    while second < first:
       if gcd(first, second) == 1:
         return lamb
       
       lamb += 1
+      second = 2 ** lamb + 1
+      
+    raise ValueError('Lambda not found for n = ' + str(self.mq.n))
   
   def create_equation(self):
     X = {};
