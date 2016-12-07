@@ -272,8 +272,8 @@ class MIA(object):
       X_squared = {}
       
       for key in X:
-        print('Key from X:' + key)
         exponent = int(key[2:]) * 2 # get exponent of actual lambda: L^x
+        print('Key from X:' + key + ' -> ' + str(exponent))
         
         if exponent >= self.mq.n:
           ired_keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + str(exponent)]).split(' + ')
@@ -281,20 +281,24 @@ class MIA(object):
           
           for ired_key in ired_keys:
             # fix as sagemath return L^1 as L
-            if ired_key == MIA.variable_lambda:
-              ired_key = MIA.variable_lambda + '^1'
+#            if ired_key == '1':
+#              ired_key = MIA.variable_lambda + '^0'
+#            if ired_key == MIA.variable_lambda:
+#              ired_key = MIA.variable_lambda + '^1'
             
             if ired_key in X_squared:
               X_squared[ired_key] ^= X[key] # new set with elements in either s or t but not both
             else:
               X_squared[ired_key] = X[key]
             
+            print('In loop if ', X_squared)
         else:
+          print('Tu ', X[key])
           X_squared[MIA.variable_lambda + '^' + str(exponent)] = X[key]
-          print('In loop ', X_squared)
+          print('In loop el ', X_squared)
       print('------------------')
       X = X_squared
-    
+    print('Result ', X)
     # second part: P`(x) = a * X ^ 1
     
     
@@ -325,8 +329,13 @@ class MIA(object):
   def create_equation(self):
     X = {};
     
-    for i in range(self.mq.n):
-      X[MIA.variable_lambda + '^' + str(i)] = set([MQ.variable_x + '^' + str(i + 1)])
+    if self.mq.n > 0:
+      X['0'] = set(['1'])
+    if self.mq.n > 1:
+      X['1'] = set([MIA.variable_lambda])
+      
+    for i in range(2, self.mq.n):
+      X[MIA.variable_lambda + '^' + str(i)] = set([MQ.variable_x + str(i + 1)])
       
     return X
     
@@ -335,12 +344,19 @@ class MIA(object):
     S = R.quotient(irreducible_polynomial, MIA.variable_lambda)
     a = S.gen()
     
-    irred_polynomial_rem = {MIA.variable_lambda + '^0': a ** 0} #irred_polynomial_rem[MIA.variable_lambda + '0'] = a**0
-    
+    #irred_polynomial_rem = {MIA.variable_lambda + '^0': a ** 0} #irred_polynomial_rem[MIA.variable_lambda + '0'] = a**0
+    irred_polynomial_rem = {}
+    if self.mq.n > 0:
+      irred_polynomial_rem['0'] = a ** 0
+    if self.mq.n > 1:
+      irred_polynomial_rem['L'] = irred_polynomial_rem['0'] * a
+    if self.mq.n > 2:
+      irred_polynomial_rem['L^2'] = irred_polynomial_rem['L'] * a
+      
     count = self.mq.n ** 2 - 2
-    for i in range(1, count):
+    for i in range(3, count):
       irred_polynomial_rem[MIA.variable_lambda + '^' + str(i)] = irred_polynomial_rem[MIA.variable_lambda + '^' + str(i - 1)] * a
-        
+    
     return irred_polynomial_rem
 
 
