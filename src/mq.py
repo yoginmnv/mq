@@ -267,11 +267,11 @@ class MIA(object):
     #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
     
+    print(self.irred_polynomial)
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
     # first part: a = left_side ^ (2 ^ lambda)
-    count_of_squaring = 2 ** self.lamb
-    for counter in range(count_of_squaring):
+    for counter in range(self.lamb):
       X_squared = {}
       
       for key in left_side: # loop through all keys in dictionary(left_side)
@@ -284,23 +284,14 @@ class MIA(object):
           ired_keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + str(exponent)]).split(' + ')
           
           for ired_key in ired_keys: # loop through all keys in array
-            # fix as sagemath return L^0 as 1 and L^1 as L
-            if ired_key == '1':
-              ired_key = MIA.variable_lambda + '^0'
-            elif ired_key == MIA.variable_lambda:
-              ired_key = MIA.variable_lambda + '^1'
-            
-            # check if key is in dictonary
-            if ired_key in X_squared:
-              X_squared[ired_key] ^= left_side[key] # new set with elements in either s or t but not both
-            else:
-              X_squared[ired_key] = left_side[key]
+            self.insert_value(X_squared, ired_key, left_side[key], False)
             
       left_side = X_squared
     
     print(left_side)
     print(right_side)
     print('-------------------------')
+    
     # second part: P`(x) = a * X ^ 1
     R = {}
     
@@ -318,26 +309,17 @@ class MIA(object):
             key = MIA.variable_lambda + '^' + str(exponent)
             
             if exponent < self.mq.n:
-              self.choose_operation(R, key, left_value, right_value)
+              self.choose_operation(R, key, left_value, right_value, True)
               print('A', R)
             else:
               ired_keys = str(self.irred_polynomial_rem[key]).split(' + ')
               
               for ired_key in ired_keys:
-                self.choose_operation(R, ired_key, left_value, right_value)
+                self.choose_operation(R, ired_key, left_value, right_value, True)
                 print('A', R)
       print('-------------------------')          
 
     pprint(R)
-    
-#    R = GF(2)['x1, x2, x3, L'].gens()
-#    X = (R[0]*R[3]**0 + R[1]*R[3]**1 + R[2]*R[3]**2 )
-#    print(X)
-#    X2 =(R[0]*R[3]**0 + R[1]*R[3]**1 + R[2]*R[3]**2 )**2
-#    print(X2)
-#    print(X2[0])
-#    power = 2 ** self.lamb + 1
-    #print(X)
     
   def compute_lambda(self, n):
     lamb = 1
@@ -374,9 +356,9 @@ class MIA(object):
     
     return irred_polynomial_rem
   
-  def choose_operation(self, dictonary, key, left_value, right_value):    
+  def choose_operation(self, dictonary, key, left_value, right_value, as_set):    
     if left_value == right_value:
-      self.insert_value(dictonary, key, left_value)
+      self.insert_value(dictonary, key, left_value, as_set)
     else:
       product = ''
       
@@ -385,9 +367,9 @@ class MIA(object):
       else:
         product = right_value + '*' + left_value
       
-      self.insert_value(dictonary, key, product)
+      self.insert_value(dictonary, key, product, as_set)
   
-  def insert_value(self, dictonary, key, value):
+  def insert_value(self, dictonary, key, value, as_set):
     # fix as sagemath return L^0 as 1 and L^1 as L
     if key == '1':
       key = MIA.variable_lambda + '^0'
@@ -396,10 +378,17 @@ class MIA(object):
 
     print('    Inserting ', key, value)
     print('B', dictonary)
+    
     if key in dictonary:
-      dictonary[key] ^= set([value]) # new set with elements in either s or t but not both
+      if as_set == True:
+        dictonary[key] ^= set([value]) # new set with elements in either s or t but not both
+      else:
+        dictonary[key] ^= value # new set with elements in either s or t but not both
     else:
-      dictonary[key] = set([value]) # new set with elements from both s and t
+      if as_set == True:
+        dictonary[key] = set([value]) # new set with elements from both s and t
+      else:
+        dictonary[key] = value # new set with elements from both s and t
 
 
 
