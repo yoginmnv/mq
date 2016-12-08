@@ -247,8 +247,8 @@ class MIA(object):
   variable_lambda = 'L'
   
   def __init__(self, MQ):
-    self.logger = logging.getLogger('MIA')
-    self.logger.info('creating an instance of MIA')
+    #self.logger = logging.getLogger('MIA')
+    #self.logger.info('creating an instance of MIA')
     self.mq = MQ
     self._P = None
     self.irred_polynomial = None
@@ -267,7 +267,6 @@ class MIA(object):
     #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
     
-    
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
     # first part: a = left_side ^ (2 ^ lambda)
@@ -275,38 +274,34 @@ class MIA(object):
     for counter in range(count_of_squaring):
       X_squared = {}
       
-      for key in left_side:
-        exponent = int(key[2:]) * 2 # get exponent of actual lambda: L^x
-        #print('Key from X:' + key + ' -> ' + str(exponent))
+      for key in left_side: # loop through all keys in dictionary(left_side)
+        # get exponent of actual lambda: L^x
+        exponent = int(key[2:]) * 2 
         
-        if exponent >= self.mq.n:
+        if exponent < self.mq.n:
+          X_squared[MIA.variable_lambda + '^' + str(exponent)] = left_side[key]
+        else:
           ired_keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + str(exponent)]).split(' + ')
-          #print('Keys ', ired_keys)
           
-          for ired_key in ired_keys:
+          for ired_key in ired_keys: # loop through all keys in array
             # fix as sagemath return L^0 as 1 and L^1 as L
             if ired_key == '1':
               ired_key = MIA.variable_lambda + '^0'
             elif ired_key == MIA.variable_lambda:
               ired_key = MIA.variable_lambda + '^1'
             
+            # check if key is in dictonary
             if ired_key in X_squared:
               X_squared[ired_key] ^= left_side[key] # new set with elements in either s or t but not both
             else:
               X_squared[ired_key] = left_side[key]
             
-            #print('In loop if ', X_squared)
-        else:
-          #print('Here ', left_side[key])
-          X_squared[MIA.variable_lambda + '^' + str(exponent)] = left_side[key]
-          #print('In loop el ', X_squared)
-      #print('------------------')
-      left_side = X_squared      
+      left_side = X_squared
     
+    print(left_side)
+    print(right_side)
+    print('-------------------------')
     # second part: P`(x) = a * X ^ 1
-    pprint(left_side)
-    pprint(right_side)
-    print('---------')
     R = {}
     
     for left_key in left_side:
@@ -318,43 +313,21 @@ class MIA(object):
           right_key_exponent = int(right_key[2:])
           
           for right_value in right_side[right_key]:
-            print("Right key and value", right_key, right_value)
-            exponent = str(left_key_exponent + right_key_exponent)
-            print(exponent)
+            print("    Right key and value", right_key, right_value)
+            exponent = left_key_exponent + right_key_exponent
+            key = MIA.variable_lambda + '^' + str(exponent)
             
-            if int(exponent) >= self.mq.n:
-              ired_keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + exponent]).split(' + ')
+            if exponent < self.mq.n:
+              self.choose_operation(R, key, left_value, right_value)
+              print('A', R)
+            else:
+              ired_keys = str(self.irred_polynomial_rem[key]).split(' + ')
               
               for ired_key in ired_keys:
-                exit(0)
-                # fix as sagemath return L^0 as 1 and L^1 as L
-                if ired_key == '1':
-                  ired_key = MIA.variable_lambda + '^0'
-                elif ired_key == MIA.variable_lambda:
-                  ired_key = MIA.variable_lambda + '^1'
+                self.choose_operation(R, ired_key, left_value, right_value)
+                print('A', R)
+      print('-------------------------')          
 
-#                if left_value == right_value:
-#                  
-#                else:
-#                  product = left_value + '*' + right_value
-#                  
-#                if ired_key in X_squared:
-#                  R[ired_key] ^= left_side[key] # new set with elements in either s or t but not both
-#                else:
-#                  R[ired_key] = left_side[key]
-                  
-            else:
-              if left_value == right_value:
-                R[MIA.variable_lambda + '^' + exponent] = left_value
-              else:
-                product = left_value + '*' + right_value
-                
-                if MIA.variable_lambda + '^' + exponent in R:
-                  R[MIA.variable_lambda + '^' + exponent] ^= product # new set with elements in either s or t but not both
-                else:
-                  R[MIA.variable_lambda + '^' + exponent] = product # new set with elements from both s and t
-                  
-              print(R[MIA.variable_lambda + '^' + exponent])
     pprint(R)
     
 #    R = GF(2)['x1, x2, x3, L'].gens()
@@ -400,6 +373,33 @@ class MIA(object):
       irred_polynomial_rem[MIA.variable_lambda + '^' + str(i)] = irred_polynomial_rem[MIA.variable_lambda + '^' + str(i - 1)] * a
     
     return irred_polynomial_rem
+  
+  def choose_operation(self, dictonary, key, left_value, right_value):    
+    if left_value == right_value:
+      self.insert_value(dictonary, key, left_value)
+    else:
+      product = ''
+      
+      if left_value < right_value:
+        product = left_value + '*' + right_value
+      else:
+        product = right_value + '*' + left_value
+      
+      self.insert_value(dictonary, key, product)
+  
+  def insert_value(self, dictonary, key, value):
+    # fix as sagemath return L^0 as 1 and L^1 as L
+    if key == '1':
+      key = MIA.variable_lambda + '^0'
+    elif key == MIA.variable_lambda:
+      key = MIA.variable_lambda + '^1'
+
+    print('    Inserting ', key, value)
+    print('B', dictonary)
+    if key in dictonary:
+      dictonary[key] ^= set([value]) # new set with elements in either s or t but not both
+    else:
+      dictonary[key] = set([value]) # new set with elements from both s and t
 
 
 
