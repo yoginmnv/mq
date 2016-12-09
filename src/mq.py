@@ -12,17 +12,12 @@
 import logging
 from random import randint
 from random import shuffle
-from sets import Set
 from pprint import pprint
-import sys
 from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
 
-import time
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
 
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
@@ -30,8 +25,6 @@ __license__ = "GPL"
 __version__ = "1.0.1"
 __email__ = "xpolakm4 at stuba dot sk"
 __status__ = "In progress"
-
-
 
 class MQ(object):
   """
@@ -45,9 +38,8 @@ class MQ(object):
   operator_power = '**'
   
   def __init__(self, n, m):
-    self.logger = logging.getLogger('MQ')
-    self.logger.info('creating instance of MQ')
-    
+    self.logger = logging.getLogger(self.__class__.__name__)
+    self.logger.info('Creating instance of MQ')
     if( n < 1 ):
       raise ValueError('Count of variables have to be greater than 1')
     if( m < 1 ):
@@ -72,6 +64,9 @@ class MQ(object):
 
 class AffineTransformation:
   def __init__(self, dimension, transformation_type):
+    self.logger = logging.getLogger(self.__class__.__name__)
+    self.logger.info('Creating instance of AffineTransformation')
+    
     if dimension < 2:
       raise ValueError("Dimension have to be greather then 2")
     
@@ -114,7 +109,8 @@ class UOV(object):
   # 3a. dosadit rovnice(1) do rovnic(2) y_m
   
   def __init__(self, oil_vector, vinegar_vector = []):
-    self.logger = logging.getLogger('UOV')
+    self.logger = logging.getLogger(self.__class__.__name__)
+    self.logger.info('Creating instance of UOV')
     self._P = []
     self.oil = oil_vector
     
@@ -142,8 +138,8 @@ class STS(object):
   """
   
   def __init__(self, MQ, layers_count, variables_in_layer, equations_in_layer):
-    self.logger = logging.getLogger('STS')
-    self.logger.info('creating an instance of STS')
+    self.logger = logging.getLogger(self.__class__.__name__)
+    self.logger.info('Creating instance of STS')
     self.mq = MQ
     self._P = {}
     self.layers_count = layers_count
@@ -246,11 +242,12 @@ class MIA(object):
   """
   variable_lambda = 'L'
   
+  
   def __init__(self, MQ):
-    #self.logger = logging.getLogger('MIA')
-    #self.logger.info('creating an instance of MIA')
+    self.logger = logging.getLogger(self.__class__.__name__)
+    self.logger.info('Creating instance of MIA')
     self.mq = MQ
-    self._P = None
+    self._P = {}
     self.irred_polynomial = None
     self.irred_polynomial_rem = {}
     self.lamb = None
@@ -267,7 +264,7 @@ class MIA(object):
     #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
     
-    print(self.irred_polynomial)
+    self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
     # first part: a = left_side ^ (2 ^ lambda)
@@ -276,7 +273,7 @@ class MIA(object):
       
       for key in left_side: # loop through all keys in dictionary(left_side)
         # get exponent of actual lambda: L^x
-        exponent = int(key[2:]) * 2 
+        exponent = int(key[2:]) * 2
         
         if exponent < self.mq.n:
           X_squared[MIA.variable_lambda + '^' + str(exponent)] = left_side[key]
@@ -285,41 +282,39 @@ class MIA(object):
           
           for ired_key in ired_keys: # loop through all keys in array
             self.insert_value(X_squared, ired_key, left_side[key], False)
-            
+          
       left_side = X_squared
     
-    print(left_side)
-    print(right_side)
-    print('-------------------------')
+    self.logger.info('Computed left side with lambda = %s\n%s', self.lamb, left_side)
+    self.logger.info('Multipling with right side\n%s\n-------------------------', right_side)
     
-    # second part: P`(x) = a * X ^ 1
-    R = {}
-    
+    # second part: P`(x) = a * X ^ 1    
     for left_key in left_side:
       left_key_exponent = int(left_key[2:])
       
       for left_value in left_side[left_key]:
-        print("Left key and value", left_key, left_value)
+        self.logger.info("Left key and value %s %s", left_key, left_value)
+        
         for right_key in right_side:
           right_key_exponent = int(right_key[2:])
           
           for right_value in right_side[right_key]:
-            print("    Right key and value", right_key, right_value)
+            self.logger.info("Right key and value %s, %s", right_key, right_value)
             exponent = left_key_exponent + right_key_exponent
             key = MIA.variable_lambda + '^' + str(exponent)
             
             if exponent < self.mq.n:
-              self.choose_operation(R, key, left_value, right_value, True)
-              print('A', R)
+              self.choose_operation(self._P, key, left_value, right_value, True)
+              self.logger.info("After inserting\n%s", self._P)
             else:
               ired_keys = str(self.irred_polynomial_rem[key]).split(' + ')
               
               for ired_key in ired_keys:
-                self.choose_operation(R, ired_key, left_value, right_value, True)
-                print('A', R)
-      print('-------------------------')          
-
-    pprint(R)
+                self.choose_operation(self._P, ired_key, left_value, right_value, True)
+                self.logger.info("After inserting\n%s", self._P)
+          self.logger.info("\n-------------")
+      self.logger.info('\n--------------------------')
+    self.logger.info('Result\n%s', self._P)
     
   def compute_lambda(self, n):
     lamb = 1
@@ -375,9 +370,9 @@ class MIA(object):
       key = MIA.variable_lambda + '^0'
     elif key == MIA.variable_lambda:
       key = MIA.variable_lambda + '^1'
-
-    print('    Inserting ', key, value)
-    print('B', dictonary)
+    
+    self.logger.info("Inserting at key = %s, value = %s", key, value)
+    self.logger.info("Before inserting\n%s", dictonary)
     
     if key in dictonary:
       if as_set == True:
@@ -397,9 +392,8 @@ class HFE(MQ):
   Hidden Field Equations
   """
   def __init__(self):
-    self.logger = logging.getLogger('HFE')
-    self.logger.info('creating an instance of HFE')
-
+    self.logger = logging.getLogger(self.__class__.__name__)
+    self.logger.info('Creating instance of HFE')
     self._P = []
 
 
@@ -476,7 +470,7 @@ def create_polynomial(elements, degree):
   
   return result
 
-if __name__ == "__main__":    
+if __name__ == "__main__":
   mq = MQ(3, 24)
   
   #sts = STS(mq, 4, [3, 4, 5, 5], [6, 6, 6, 6])
