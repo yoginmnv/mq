@@ -34,8 +34,10 @@ class MQ(object):
   """
   variable_x = 'x'
   variable_y = 'y'
-  operator_mul = ' * '
-  operator_power = '**'
+  variable_lambda = 'L'
+  operator_plus = '+'
+  operator_mul = '*'
+  operator_power = '^'
   
   def __init__(self, n, m):
     self.logger = logging.getLogger(self.__class__.__name__)
@@ -92,6 +94,7 @@ class AffineTransformation:
   def compute_transformation(self):
     for row in range(self.dimension):
       equation = []
+      
       for column in range(self.dimension):
         if self.matrix[row][column] == 1:
           equation.append(self.transformation_type + str(column + 1))
@@ -162,10 +165,8 @@ class STS(object):
   def create_trapdoor(self):
     self.logger.info('creating trapdoor for STS')
 
-    variable_x = 'x'
-    variable_y = 'y'
     # ake premenne sa maju vyskytovat v rovniciach
-    should_contains = [variable_x + str(i) for i in range(1, self.mq.n + 1)]
+    should_contains = [MQ.variable_x + str(i) for i in range(1, self.mq.n + 1)]
     
     for layer in range(self.layers_count):     
       if self.variables_in_layer[layer] > self.mq.n:
@@ -184,7 +185,7 @@ class STS(object):
       i = 0
       # pre pocet rovnic vo vrstve
       while i < self.equations_in_layer[layer]:
-        actual_equation = variable_y + str(i)
+        actual_equation = MQ.variable_y + str(i)
         
         rand = randint(self.variables_in_layer[layer], triangle_number)
         self._P[actual_equation] = set(sub_product[:rand])
@@ -209,9 +210,10 @@ class STS(object):
         # kontrolujem ci sa predchadzajuca rovnica nezhoduje s aktualnou
         if i > 0:
           actual_eq_len = len(self._P[actual_equation])
+          
           for j in range(i):
-            if actual_eq_len == len(self._P[variable_y + str(j)]):
-              if self._P[actual_equation] == self._P[variable_y + str(j)]:
+            if actual_eq_len == len(self._P[MQ.variable_y + str(j)]):
+              if self._P[actual_equation] == self._P[MQ.variable_y + str(j)]:
                 print("Equation " + str(i + 1) + " equals with equation " + str(j + 1) + " -> creating new equation")
                 i -= 1
                 
@@ -240,8 +242,7 @@ class MIA(object):
   7. roznasobit zatvorky
   8. vyjmut premenne pre dane lambdy
   """
-  variable_lambda = 'L'
-  
+  lambda_squared_to = MQ.variable_lambda + MQ.operator_power
   
   def __init__(self, MQ):
     self.logger = logging.getLogger(self.__class__.__name__)
@@ -251,15 +252,12 @@ class MIA(object):
     self.irred_polynomial = None
     self.irred_polynomial_rem = {}
     self.lamb = None
-    self.h = 0
     self.create_trapdoor()
     
   def create_trapdoor(self):
     self.lamb = self.compute_lambda(self.mq.n)
     left_side = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
-    right_side = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
-    #left_side = right_side.copy()
-    #left_side = dict(right_side)
+    right_side = left_side.copy() # or dict(left_side)
     self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildIrred_list(self.mq.n))
     #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
@@ -267,23 +265,23 @@ class MIA(object):
     self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
-    # first part: a = left_side ^ (2 ^ lambda)
-    for counter in range(self.lamb):
-      X_squared = {}
+    # first part: a = left_side ^ (2 ^ lambda), will be calculated using the Frobenius automorphisms
+    for counter in range(self.lamb): # square left_side lamb times
+      left_side_squared = {}
       
-      for key in left_side: # loop through all keys in dictionary(left_side)
-        # get exponent of actual lambda: L^x
+      for key in left_side: # loop through all keys in dictionary(left_side) {L^0, L^1, ..., L^(n-1)}
+        # get exponent of actual key | lambda: L^x
         exponent = int(key[2:]) * 2
         
         if exponent < self.mq.n:
-          X_squared[MIA.variable_lambda + '^' + str(exponent)] = left_side[key]
+          left_side_squared[MIA.lambda_squared_to + str(exponent)] = left_side[key]
         else:
-          ired_keys = str(self.irred_polynomial_rem[MIA.variable_lambda + '^' + str(exponent)]).split(' + ')
+          ired_keys = str(self.irred_polynomial_rem[MIA.lambda_squared_to + str(exponent)]).split(' + ')
           
           for ired_key in ired_keys: # loop through all keys in array
-            self.insert_value(X_squared, ired_key, left_side[key], False)
+            self.insert_value(left_side_squared, ired_key, left_side[key], False)
           
-      left_side = X_squared
+      left_side = left_side_squared
     
     self.logger.info('Computed left side with lambda = %s\n%s', self.lamb, left_side)
     self.logger.info('Multipling with right side\n%s\n-------------------------', right_side)
@@ -293,27 +291,28 @@ class MIA(object):
       left_key_exponent = int(left_key[2:])
       
       for left_value in left_side[left_key]:
-        self.logger.info("Left key and value %s %s", left_key, left_value)
+        self.logger.debug("Left key and value %s %s", left_key, left_value)
         
         for right_key in right_side:
           right_key_exponent = int(right_key[2:])
           
           for right_value in right_side[right_key]:
-            self.logger.info("Right key and value %s, %s", right_key, right_value)
+            self.logger.debug("Right key and value %s, %s", right_key, right_value)
             exponent = left_key_exponent + right_key_exponent
-            key = MIA.variable_lambda + '^' + str(exponent)
+            key = MIA.lambda_squared_to + str(exponent)
             
             if exponent < self.mq.n:
               self.choose_operation(self._P, key, left_value, right_value, True)
-              self.logger.info("After inserting\n%s", self._P)
+              self.logger.debug("After inserting\n%s", self._P)
             else:
               ired_keys = str(self.irred_polynomial_rem[key]).split(' + ')
               
               for ired_key in ired_keys:
                 self.choose_operation(self._P, ired_key, left_value, right_value, True)
-                self.logger.info("After inserting\n%s", self._P)
-          self.logger.info("\n-------------")
-      self.logger.info('\n--------------------------')
+                self.logger.debug("After inserting\n%s", self._P)
+              
+          self.logger.debug("\n-------------")
+      self.logger.debug('\n--------------------------')
     self.logger.info('Result\n%s', self._P)
     
   def compute_lambda(self, n):
@@ -333,23 +332,23 @@ class MIA(object):
   def create_equation(self):
     X = {};
     
-    for i in range(self.mq.n):
-      X[MIA.variable_lambda + '^' + str(i)] = set([MQ.variable_x + str(i + 1)])
+    for exponent in range(self.mq.n):
+      X[MIA.lambda_squared_to + str(exponent)] = set([MQ.variable_x + str(exponent + 1)])
     
     return X
     
   def compute_remainder(self, irreducible_polynomial):
-    R = PolynomialRing(GF(2), MIA.variable_lambda)
-    S = R.quotient(irreducible_polynomial, MIA.variable_lambda)
+    R = PolynomialRing(GF(2), MQ.variable_lambda)
+    S = R.quotient(irreducible_polynomial, MQ.variable_lambda)
     a = S.gen()
     
-    irred_polynomial_rem = {MIA.variable_lambda + '^0': a ** 0} #irred_polynomial_rem[MIA.variable_lambda + '0'] = a**0
+    remainder = {MQ.variable_lambda + '^0': a ** 0} # irred_polynomial_rem[MQ.variable_lambda + '0'] = a**0
     
-    count = self.mq.n ** 2 - 2
-    for i in range(1, count):
-      irred_polynomial_rem[MIA.variable_lambda + '^' + str(i)] = irred_polynomial_rem[MIA.variable_lambda + '^' + str(i - 1)] * a
+    count = (self.mq.n ** 2) - 2
+    for exponent in range(1, count):
+      remainder[MIA.lambda_squared_to + str(exponent)] = remainder[MIA.lambda_squared_to + str(exponent - 1)] * a
     
-    return irred_polynomial_rem
+    return remainder
   
   def choose_operation(self, dictonary, key, left_value, right_value, as_set):    
     if left_value == right_value:
@@ -358,21 +357,21 @@ class MIA(object):
       product = ''
       
       if left_value < right_value:
-        product = left_value + '*' + right_value
+        product = left_value + MQ.operator_mul + right_value
       else:
-        product = right_value + '*' + left_value
+        product = right_value + MQ.operator_mul + left_value
       
       self.insert_value(dictonary, key, product, as_set)
   
   def insert_value(self, dictonary, key, value, as_set):
     # fix as sagemath return L^0 as 1 and L^1 as L
     if key == '1':
-      key = MIA.variable_lambda + '^0'
-    elif key == MIA.variable_lambda:
-      key = MIA.variable_lambda + '^1'
+      key = MQ.variable_lambda + '^0'
+    elif key == MQ.variable_lambda:
+      key = MQ.variable_lambda + '^1'
     
-    self.logger.info("Inserting at key = %s, value = %s", key, value)
-    self.logger.info("Before inserting\n%s", dictonary)
+    self.logger.debug("Inserting at key = %s, value = %s", key, value)
+    self.logger.debug("Before inserting\n%s", dictonary)
     
     if key in dictonary:
       if as_set == True:
@@ -475,8 +474,4 @@ if __name__ == "__main__":
   
   #sts = STS(mq, 4, [3, 4, 5, 5], [6, 6, 6, 6])
   mia = MIA(mq)
-  
-  #x = PolynomialRing(GF(2), 'x').gen()
-  #f = x**4 + x + 1
-  #g = x + 1
-  #print(f.gcd(g))
+  #hfe = HFE(mq)
