@@ -7,8 +7,7 @@
 #https://github.com/kennethreitz/samplemod
 
 #http://doc.sagemath.org/html/en/tutorial/tour_algebra.html
-#http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html
-#http://doc.sagemath.org/html/en/constructions/polynomials.html
+#https://en.wikipedia.org/wiki/Remainder
 import logging
 from random import randint
 from random import shuffle
@@ -61,8 +60,55 @@ class MQ(object):
         product.append(MQ.variable_x + str(j) + MQ.operator_mul + MQ.variable_x + str(i))
 
     return product
+    
+  def create_equation(self):
+    """
+    Return equation in form x_1*Alpha^0 + x_2*Alpha^1 + ... + x_n*Alpha^(n-1),
+    transformed into dictionary where keys are Alphas as strings 
+    (MQ.variable_lambda + MQ.operator_power + exponent) i.e. L^2
+    """
+    X = {};
+    lambda_raised_to = MQ.variable_lambda + MQ.operator_power
+    
+    for exponent in range(self.n):
+      X[lambda_raised_to + str(exponent)] = set([MQ.variable_x + str(exponent + 1)])
+    
+    return X
 
-
+  def create_irreducible_polynomial(self, variable):
+    """
+    http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildIrred_list
+    Return the list of coefficients of the lexicographically smallest 
+    irreducible polynomial of degree n over the Gladis field of 2 elements.
+    """
+    return GF(2)[variable](GF2X_BuildIrred_list(self.n))
+  
+  def create_random_irreducible_polynomial(self, variable):
+    """
+    http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildRandomIrred_list
+    Return the list of coefficients of an irreducible polynomial of degree n 
+    of minimal weight over the Gladis field of 2 elements.
+    """
+    return GF(2)[variable](GF2X_BuildRandomIrred_list(self.n))
+  
+  def compute_remainder(self, irreducible_polynomial, key):
+    """
+    Return dictionary with remainders after raising irreducible polynomial 
+    over its size
+    """
+    R = PolynomialRing(GF(2), key)
+    S = R.quotient(irreducible_polynomial, key)
+    a = S.gen()
+    
+    key_raised_to = key + MQ.operator_power
+    
+    remainder = {key_raised_to + '0': a ** 0}
+    
+    count = (self.n ** 2) - 2
+    for exponent in range(1, count):
+      remainder[key_raised_to + str(exponent)] = remainder[key_raised_to + str(exponent - 1)] * a
+    
+    return remainder
 
 class AffineTransformation:
   def __init__(self, dimension, transformation_type):
@@ -242,7 +288,7 @@ class MIA(object):
   7. roznasobit zatvorky
   8. vyjmut premenne pre dane lambdy
   """
-  lambda_squared_to = MQ.variable_lambda + MQ.operator_power
+  lambda_raised_to = MQ.variable_lambda + MQ.operator_power
   
   def __init__(self, MQ):
     self.logger = logging.getLogger(self.__class__.__name__)
@@ -256,11 +302,10 @@ class MIA(object):
     
   def create_trapdoor(self):
     self.lamb = self.compute_lambda(self.mq.n)
-    left_side = self.create_equation() # x1 + x2 * L + x3 * L^2 + ...
+    left_side = self.mq.create_equation()
     right_side = left_side.copy() # or dict(left_side)
-    self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildIrred_list(self.mq.n))
-    #self.irred_polynomial = GF(2)[MQ.variable_x](GF2X_BuildRandomIrred_list(self.mq.n))
-    self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial)
+    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
+    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
     
     self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
@@ -274,9 +319,9 @@ class MIA(object):
         exponent = int(key[2:]) * 2
         
         if exponent < self.mq.n:
-          left_side_squared[MIA.lambda_squared_to + str(exponent)] = left_side[key]
+          left_side_squared[MIA.lambda_raised_to + str(exponent)] = left_side[key]
         else:
-          ired_keys = str(self.irred_polynomial_rem[MIA.lambda_squared_to + str(exponent)]).split(' + ')
+          ired_keys = str(self.irred_polynomial_rem[MIA.lambda_raised_to + str(exponent)]).split(' + ')
           
           for ired_key in ired_keys: # loop through all keys in array
             self.insert_value(left_side_squared, ired_key, left_side[key], False)
@@ -298,10 +343,10 @@ class MIA(object):
           
           for right_value in right_side[right_key]:
             self.logger.debug("Right key and value %s, %s", right_key, right_value)
-            exponent = left_key_exponent + right_key_exponent
-            key = MIA.lambda_squared_to + str(exponent)
+            exponent_sum = left_key_exponent + right_key_exponent
+            key = MIA.lambda_raised_to + str(exponent_sum)
             
-            if exponent < self.mq.n:
+            if exponent_sum < self.mq.n:
               self.choose_operation(self._P, key, left_value, right_value, True)
               self.logger.debug("After inserting\n%s", self._P)
             else:
@@ -316,6 +361,12 @@ class MIA(object):
     self.logger.info('Result\n%s', self._P)
     
   def compute_lambda(self, n):
+    """
+    Computes number L, which fulfills the condition 
+    GCD((2^n)-1, (2^L)+1) == 1, if this number is not found until the condition 
+    (2^n)-1 < (2^L)+1 is fulfilled, where n is degree of polynomial then is
+    raised error
+    """
     lamb = 1
     first = 2 ** n - 1
     second = 2 ** lamb + 1
@@ -328,27 +379,6 @@ class MIA(object):
       second = 2 ** lamb + 1
       
     raise ValueError('Lambda not found for n = ' + str(self.mq.n))
-  
-  def create_equation(self):
-    X = {};
-    
-    for exponent in range(self.mq.n):
-      X[MIA.lambda_squared_to + str(exponent)] = set([MQ.variable_x + str(exponent + 1)])
-    
-    return X
-    
-  def compute_remainder(self, irreducible_polynomial):
-    R = PolynomialRing(GF(2), MQ.variable_lambda)
-    S = R.quotient(irreducible_polynomial, MQ.variable_lambda)
-    a = S.gen()
-    
-    remainder = {MQ.variable_lambda + '^0': a ** 0} # irred_polynomial_rem[MQ.variable_lambda + '0'] = a**0
-    
-    count = (self.mq.n ** 2) - 2
-    for exponent in range(1, count):
-      remainder[MIA.lambda_squared_to + str(exponent)] = remainder[MIA.lambda_squared_to + str(exponent - 1)] * a
-    
-    return remainder
   
   def choose_operation(self, dictonary, key, left_value, right_value, as_set):    
     if left_value == right_value:
@@ -390,11 +420,49 @@ class HFE(MQ):
   """
   Hidden Field Equations
   """
-  def __init__(self):
+  def __init__(self, MQ):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of HFE')
-    self._P = []
+    self.mq = MQ
+    self._P = {}
+    self.irred_polynomial = None
+    self.irred_polynomial_rem = {}
+    self.create_trapdoor()
 
+  def create_trapdoor(self):
+    self.logger.info('Creating trapdoor for HFE')
+    left_side = self.mq.create_equation()
+    right_side = left_side.copy() # or dict(left_side)
+    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
+    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
+    
+    C = {}
+    B = {}
+    A = {}
+    # Let's create polynomial in HFE form
+    first = second = True
+    i = j = 0
+    
+    divisor = (2 ** self.mq.n) - 1 # modulo
+    d_range = range(self.mq.n, (self.mq.n * modulus) + 1) # pick d that should be small
+    
+    while first == True:
+      result = 2 ** i
+      
+      if result > d_range[0]:
+        break;
+        
+      while second == True:
+        sum_result = result + 2 ** j
+        
+        if sum_result <= d_range[0]:
+          a = 0
+          j += 1;
+        else:
+          j = 0
+          break;
+      
+      i += 1
 
 
 # Main
@@ -473,5 +541,5 @@ if __name__ == "__main__":
   mq = MQ(3, 24)
   
   #sts = STS(mq, 4, [3, 4, 5, 5], [6, 6, 6, 6])
-  mia = MIA(mq)
-  #hfe = HFE(mq)
+  #mia = MIA(mq)
+  hfe = HFE(mq)
