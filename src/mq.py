@@ -422,19 +422,23 @@ class HFE(MQ):
   """
   def __init__(self, MQ):
     self.logger = logging.getLogger(self.__class__.__name__)
-    self.logger.info('Creating instance of HFE')
+    #self.logger.info('Creating instance of HFE')
     self.mq = MQ
     self._P = {}
     self.irred_polynomial = None
     self.irred_polynomial_rem = {}
+    self.d = 0
     self.create_trapdoor()
 
   def create_trapdoor(self):
-    self.logger.info('Creating trapdoor for HFE')
+    #self.logger.info('Creating trapdoor for HFE')
     left_side = self.mq.create_equation()
     right_side = left_side.copy() # or dict(left_side)
     self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
     self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
+    
+    print(self.irred_polynomial)
+    pprint(self.irred_polynomial_rem)
     
     C = {}
     B = {}
@@ -443,27 +447,45 @@ class HFE(MQ):
     first = second = True
     i = j = 0
     
-    divisor = (2 ** self.mq.n) - 1 # modulo
-    d_range = range(self.mq.n, (self.mq.n * modulus) + 1) # pick d that should be small
+    count = (2 ** self.mq.n) - 1 # modulo
+    d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small
+    self.d = d_range[0] + 2
+    print('d=', self.d)
+    x_raised_to = MQ.variable_x + MQ.operator_power
     
     while first == True:
       result = 2 ** i
+      print('i=', i)
       
-      if result > d_range[0]:
+      if result > self.d:
         break;
-        
+      
+      r = randint(0, count - 1)
+      
       while second == True:
         sum_result = result + 2 ** j
+        print('j=', j)
+        print('2^i + 2^j', sum_result)
         
-        if sum_result <= d_range[0]:
-          a = 0
+        if sum_result <= self.d:
+          key = 'L^' + str(r)
+          value = set([self.irred_polynomial_rem[key]]) # vyber nahodny zvysok po deleni polynomom
+          
+          if key in C:
+            C[x_raised_to + str(sum_result)] ^= value
+          else:
+            C[x_raised_to + str(sum_result)] = value
+            
           j += 1;
         else:
           j = 0
           break;
       
+      B[x_raised_to + str(result)] = set([self.irred_polynomial_rem['L^' + str(r)]]) # vyber nahodny zvysok po deleni polynomom
       i += 1
-
+    
+    A[x_raised_to + '0'] = 0 # vyber nahodny zvysok po deleni polynomom 
+    pprint(C)
 
 # Main
 class MHRS:
