@@ -312,22 +312,7 @@ class MIA(object):
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
     # first part: a = left_side ^ (2 ^ lambda), will be calculated using the Frobenius automorphisms
-    for counter in range(self.lamb): # square left_side lamb times
-      left_side_squared = {}
-      
-      for key in left_side: # loop through all keys in dictionary(left_side) {L^0, L^1, ..., L^(n-1)}
-        # get exponent of actual key | lambda: L^x
-        exponent = int(key[2:]) * 2
-        
-        if exponent < self.mq.n:
-          left_side_squared[MIA.lambda_raised_to + str(exponent)] = left_side[key]
-        else:
-          ired_keys = str(self.irred_polynomial_rem[MIA.lambda_raised_to + str(exponent)]).split(' + ')
-          
-          for ired_key in ired_keys: # loop through all keys in array
-            self.insert_value(left_side_squared, ired_key, left_side[key], False)
-          
-      left_side = left_side_squared
+    left_side = self.square_polynomial(left_side, self.lamb, self.irred_polynomial_rem)
     
     self.logger.info('Computed left side with lambda = %s\n%s', self.lamb, left_side)
     self.logger.info('Multipling with right side\n%s\n-------------------------', right_side)
@@ -381,6 +366,31 @@ class MIA(object):
       second = 2 ** lamb + 1
       
     raise ValueError('Lambda not found for n = ' + str(self.mq.n))
+  
+  def square_polynomial(self, polynomial, times, remainders):
+    """
+    Raises the polynomial with exponent 2 x-times; polynomial^2^times
+    """
+    lambda_raised_to = MQ.variable_lambda + MQ.operator_power
+    
+    for counter in range(times): # square left_side lamb times
+      squared_polynomial = {}
+      
+      for key in polynomial: # loop through all keys in dictionary(left_side) {L^0, L^1, ..., L^(n-1)}
+        # get exponent of actual key | lambda: L^x
+        exponent = int(key[2:]) * 2
+        
+        if exponent < self.mq.n:
+          squared_polynomial[lambda_raised_to + str(exponent)] = polynomial[key]
+        else:
+          remand_keys = str(remainders[lambda_raised_to + str(exponent)]).split(' + ')
+          
+          for remand_key in remand_keys: # loop through all keys in array
+            self.insert_value(squared_polynomial, remand_key, polynomial[key], False)
+          
+      polynomial = squared_polynomial
+    
+    return polynomial
   
   def choose_operation(self, dictonary, key, left_value, right_value, as_set):    
     if left_value == right_value:
@@ -496,6 +506,8 @@ class HFE(MQ):
     
     pprint(X)
     
+    # 
+    
 
 # Main
 class MHRS:
@@ -570,8 +582,8 @@ def create_polynomial(elements, degree):
   return result
 
 if __name__ == "__main__":
-  mq = MQ(4, 24)
+  mq = MQ(3, 24)
   
   #sts = STS(mq, 4, [3, 4, 5, 5], [6, 6, 6, 6])
-  #mia = MIA(mq)
-  hfe = HFE(mq)
+  mia = MIA(mq)
+  #hfe = HFE(mq)
