@@ -302,7 +302,7 @@ class MIA(object):
     self.create_trapdoor()
     
   def create_trapdoor(self):
-    self.lamb = self.compute_lambda(self.mq.n)
+    self.lamb = self.compute_lambda()
     left_side = self.mq.create_equation()
     right_side = self.mq.create_equation()#left_side.copy() # or dict(left_side)
     self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
@@ -321,7 +321,7 @@ class MIA(object):
     self.logger.info('Result')
     pprint(self._P)
     
-  def compute_lambda(self, n):
+  def compute_lambda(self):
     """
     Computes number L, which fulfills the condition 
     GCD((2^n)-1, (2^L)+1) == 1, if this number is not found until the condition 
@@ -329,7 +329,7 @@ class MIA(object):
     raised error
     """
     lamb = 1
-    first = 2 ** n - 1
+    first = 2 ** self.mq.n - 1
     second = 2 ** lamb + 1
     
     while second < first:
@@ -510,8 +510,11 @@ class HFE(MQ):
         X[key] = B[key]
     
     pprint(X)
-    
-    # 
+    #
+    for key in X:
+      exponent = int(key[2:])
+    #square_polynomial
+    #multiply_polynomials
     
 
 # Main
