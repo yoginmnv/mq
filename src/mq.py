@@ -313,37 +313,11 @@ class MIA(object):
     
     # first part: a = left_side ^ (2 ^ lambda), will be calculated using the Frobenius automorphisms
     left_side = self.square_polynomial(left_side, self.lamb, self.irred_polynomial_rem)
-    
-    self.logger.info('Computed left side with lambda = %s\n%s', self.lamb, left_side)
+    self.logger.info('For lambda = %s computed left side\n%s', self.lamb, left_side)
     self.logger.info('Multipling with right side\n%s\n-------------------------', right_side)
     
-    # second part: P`(x) = a * X ^ 1    
-    for left_key in left_side:
-      left_key_exponent = int(left_key[2:])
-      
-      for left_value in left_side[left_key]:
-        self.logger.debug("Left key and value %s %s", left_key, left_value)
-        
-        for right_key in right_side:
-          right_key_exponent = int(right_key[2:])
-          
-          for right_value in right_side[right_key]:
-            self.logger.debug("Right key and value %s, %s", right_key, right_value)
-            exponent_sum = left_key_exponent + right_key_exponent
-            key = MIA.lambda_raised_to + str(exponent_sum)
-            
-            if exponent_sum < self.mq.n:
-              self.choose_operation(self._P, key, left_value, right_value, True)
-              self.logger.debug("After inserting\n%s", self._P)
-            else:
-              ired_keys = str(self.irred_polynomial_rem[key]).split(' + ')
-              
-              for ired_key in ired_keys:
-                self.choose_operation(self._P, ired_key, left_value, right_value, True)
-                self.logger.debug("After inserting\n%s", self._P)
-              
-          self.logger.debug("\n-------------")
-      self.logger.debug('\n--------------------------')
+    # second part: P`(x) = a * X ^ 1
+    self._P = self.multiply_polynomials(left_side, right_side, self.irred_polynomial_rem)
     self.logger.info('Result')
     pprint(self._P)
     
@@ -391,6 +365,37 @@ class MIA(object):
       polynomial = squared_polynomial
     
     return polynomial
+  
+  def multiply_polynomials(self, left_side, right_side, remainders):
+    result = {}
+    
+    for left_key in left_side:
+      left_key_exponent = int(left_key[2:])
+      
+      for left_value in left_side[left_key]:
+        self.logger.debug("Left key and value %s %s", left_key, left_value)
+        
+        for right_key in right_side:
+          right_key_exponent = int(right_key[2:])
+          
+          for right_value in right_side[right_key]:
+            self.logger.debug("Right key and value %s, %s", right_key, right_value)
+            exponent_sum = left_key_exponent + right_key_exponent
+            key = MIA.lambda_raised_to + str(exponent_sum)
+            
+            if exponent_sum < self.mq.n:
+              self.choose_operation(result, key, left_value, right_value, True)
+              self.logger.debug("After inserting\n%s", result)
+            else:
+              ired_keys = str(self.irred_polynomial_rem[key]).split(' + ')
+              
+              for ired_key in ired_keys:
+                self.choose_operation(result, ired_key, left_value, right_value, True)
+                self.logger.debug("After inserting\n%s", result)
+              
+          self.logger.debug("\n-------------")
+      self.logger.debug('\n--------------------------')
+    return result
   
   def choose_operation(self, dictonary, key, left_value, right_value, as_set):    
     if left_value == right_value:
