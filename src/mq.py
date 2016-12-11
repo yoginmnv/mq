@@ -439,37 +439,33 @@ class HFE(MQ):
     self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
     self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
     
-    c_irred_polynomial_rem = self.irred_polynomial_rem.copy()
-    b_irred_polynomial_rem = self.irred_polynomial_rem.copy()
-    print(self.irred_polynomial)
-    
     # Let's create polynomial in HFE form
     C = {}
     B = {}
     A = {}
     i = j = 0
-    first = second = True
     
     count = (2 ** self.mq.n) - 1 # modulo
-    d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small
-    self.d = d_range[0] + 1
+    #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
+    d_range = range(self.mq.n, self.mq.n + 3) # pick d that should be small ?!
+    self.d = choice(d_range) # pick random value from range
     
+    print(self.irred_polynomial, self.d)
     x_raised_to = MQ.variable_x + MQ.operator_power
-    lambda_raised_to = MQ.variable_lambda + MQ.operator_power
     
-    while first == True:
+    while True:
       result = 2 ** i
       
       if result > self.d:
-        break;
+        break
       
-      while second == True:
+      while True:
         sum_result = result + (2 ** j)
         
         if sum_result <= self.d:
           self.logger.debug('i=' + str(i) +', j=' + str(j) + ', 2^i + 2^j=' + str(sum_result))
-          c_key = choice(list(c_irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
-          c_value = set([c_irred_polynomial_rem[c_key]]) # vyber nahodny zvysok po deleni polynomom
+          c_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
+          c_value = set([self.irred_polynomial_rem[c_key]]) # vyber nahodny zvysok po deleni polynomom
           x_key = x_raised_to + str(sum_result)
           
           if x_key in C:
@@ -477,18 +473,17 @@ class HFE(MQ):
           else:
             C[x_key] = set(c_value)
           
-          c_irred_polynomial_rem.pop(c_key, None)
           j += 1
         else:
           j = 0
-          break;
+          break
       
-      b_key = choice(list(b_irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
-      B[x_raised_to + str(result)] = set([b_irred_polynomial_rem[b_key]]) # vyber nahodny zvysok po deleni polynomom
-      b_irred_polynomial_rem.pop(b_key, None)
+      b_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
+      B[x_raised_to + str(result)] = set([self.irred_polynomial_rem[b_key]]) # vyber nahodny zvysok po deleni polynomom
       i += 1
     
-    A[x_raised_to + '0'] = set([self.irred_polynomial_rem[lambda_raised_to + str(0)]]) # vyber nahodny zvysok po deleni polynomom 
+    a_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
+    A[x_raised_to + '0'] = set([self.irred_polynomial_rem[b_key]]) # vyber nahodny zvysok po deleni polynomom
     
     X = C # just rename
     X.update(A) # copy dict A to dict X
