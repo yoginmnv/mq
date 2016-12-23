@@ -279,28 +279,33 @@ class STS(object):
 class PolynomialBasedTrapdoor(MQ):
   def square_polynomial(self, polynomial, times, remainders):
     """
-    Raises the polynomial with exponent 2 x-times; polynomial^2^times
+    Raises the polynomial with exponent 2 n-times; polynomial^2^times
     """
     lambda_raised_to = MQ.variable_lambda + MQ.operator_power
     
-    for counter in range(times): # square left_side lamb times
+    # create copy of dictionary
+    polynomial_copy = {}
+    for key in polynomial:
+      polynomial_copy[key] = polynomial[key].copy()
+    
+    for counter in range(times): # square polynomial n-times
       squared_polynomial = {}
       
-      for key in polynomial: # loop through all keys in dictionary(left_side) {L^0, L^1, ..., L^(n-1)}
+      for key in polynomial_copy: # loop through all keys in dictionary {L^0, L^1, ..., L^(n-1)}
         # get exponent of actual key | lambda: L^x
         exponent = int(key[2:]) * 2
         
         if exponent < self.mq.n:
-          squared_polynomial[lambda_raised_to + str(exponent)] = polynomial[key]
+          squared_polynomial[lambda_raised_to + str(exponent)] = polynomial_copy[key]
         else:
           remand_keys = str(remainders[lambda_raised_to + str(exponent)]).split(' + ')
           
           for remand_key in remand_keys: # loop through all keys in array
-            self.insert_value(squared_polynomial, remand_key, polynomial[key], False)
+            self.insert_value(squared_polynomial, remand_key, polynomial_copy[key], False)
           
-      polynomial = squared_polynomial
+      polynomial_copy = squared_polynomial
     
-    return polynomial
+    return polynomial_copy
   
   def multiply_polynomials(self, left_side, right_side, remainders):
     result = {}
