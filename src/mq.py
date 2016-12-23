@@ -276,71 +276,7 @@ class STS(object):
 
 
 
-class MIA(object):
-  """
-  Matsumoto-Imai
-  http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html
-  1. vygenerovat lambdu ak je to mozne -> GCD(2^n - 1, 2^L + 1) == 1
-  2. vygenerovat vyraz v tvare x1 + x2*L^1 + x3*L^2 + ... x_n*L^n-1
-  3. vygenerovat ireducibilny polynom stupna n
-  4. zistit zvysky po deleni pre zvoleny ireducibilny polynom -> napr pre x3 + x + 1 = x1->x1, x2->x2, x3->x + 1, x4->x^2 + x, ...
-  5. umocnit vygenerovany vyraz na 2^L + 1
-  6. za labdy stupna vacsieho ako n dosadit zvysky po deleni
-  7. roznasobit zatvorky
-  8. vyjmut premenne pre dane lambdy
-  """
-  lambda_raised_to = MQ.variable_lambda + MQ.operator_power
-  
-  def __init__(self, MQ):
-    self.logger = logging.getLogger(self.__class__.__name__)
-    self.logger.info('Creating instance of MIA')
-    self.mq = MQ
-    self._P = {}
-    self.irred_polynomial = None
-    self.irred_polynomial_rem = {}
-    self.lamb = None
-    self.create_trapdoor()
-    
-  def create_trapdoor(self):
-    self.lamb = self.compute_lambda()
-    left_side = self.mq.create_equation()
-    right_side = self.mq.create_equation()#left_side.copy() # or dict(left_side)
-    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
-    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
-    
-    self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
-    # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
-    
-    # first part: a = left_side ^ (2 ^ lambda), will be calculated using the Frobenius automorphisms
-    left_side = self.square_polynomial(left_side, self.lamb, self.irred_polynomial_rem)
-    self.logger.info('For lambda = %s computed left side\n%s', self.lamb, left_side)
-    self.logger.info('Multipling with right side\n%s\n-------------------------', right_side)
-    
-    # second part: P`(x) = a * X ^ 1
-    self._P = self.multiply_polynomials(left_side, right_side, self.irred_polynomial_rem)
-    self.logger.info('Result')
-    pprint(self._P)
-    
-  def compute_lambda(self):
-    """
-    Computes number L, which fulfills the condition 
-    GCD((2^n)-1, (2^L)+1) == 1, if this number is not found until the condition 
-    (2^n)-1 < (2^L)+1 is fulfilled, where n is degree of polynomial then is
-    raised error
-    """
-    lamb = 1
-    first = 2 ** self.mq.n - 1
-    second = 2 ** lamb + 1
-    
-    while second < first:
-      if gcd(first, second) == 1:
-        return lamb
-      
-      lamb += 1
-      second = 2 ** lamb + 1
-      
-    raise ValueError('Lambda not found for n = ' + str(self.mq.n))
-  
+class PolynomialBasedTrapdoor(MQ):
   def square_polynomial(self, polynomial, times, remainders):
     """
     Raises the polynomial with exponent 2 x-times; polynomial^2^times
@@ -433,7 +369,74 @@ class MIA(object):
 
 
 
-class HFE(MQ):
+class MIA(PolynomialBasedTrapdoor):
+  """
+  Matsumoto-Imai
+  http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html
+  1. vygenerovat lambdu ak je to mozne -> GCD(2^n - 1, 2^L + 1) == 1
+  2. vygenerovat vyraz v tvare x1 + x2*L^1 + x3*L^2 + ... x_n*L^n-1
+  3. vygenerovat ireducibilny polynom stupna n
+  4. zistit zvysky po deleni pre zvoleny ireducibilny polynom -> napr pre x3 + x + 1 = x1->x1, x2->x2, x3->x + 1, x4->x^2 + x, ...
+  5. umocnit vygenerovany vyraz na 2^L + 1
+  6. za labdy stupna vacsieho ako n dosadit zvysky po deleni
+  7. roznasobit zatvorky
+  8. vyjmut premenne pre dane lambdy
+  """
+  lambda_raised_to = MQ.variable_lambda + MQ.operator_power
+  
+  def __init__(self, MQ):
+    self.logger = logging.getLogger(self.__class__.__name__)
+    self.logger.info('Creating instance of MIA')
+    self.mq = MQ
+    self._P = {}
+    self.irred_polynomial = None
+    self.irred_polynomial_rem = {}
+    self._lambda = None
+    self.create_trapdoor()
+    
+  def create_trapdoor(self):
+    self._lambda = self.compute_lambda()
+    left_side = self.mq.create_equation()
+    right_side = self.mq.create_equation()#left_side.copy() # or dict(left_side)
+    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
+    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
+    
+    self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
+    # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
+    
+    # first part: a = left_side ^ (2 ^ lambda), will be calculated using the Frobenius automorphisms
+    left_side = self.square_polynomial(left_side, self._lambda, self.irred_polynomial_rem)
+    self.logger.info('For lambda = %s computed left side\n%s', self._lambda, left_side)
+    self.logger.info('Multipling with right side\n%s\n-------------------------', right_side)
+    
+    # second part: P`(x) = a * X ^ 1
+    self._P = self.multiply_polynomials(left_side, right_side, self.irred_polynomial_rem)
+    self.logger.info('Result')
+    pprint(self._P)
+    
+  def compute_lambda(self):
+    """
+    Computes number L, which fulfills the condition 
+    GCD((2^n)-1, (2^L)+1) == 1, if this number is not found until the condition 
+    (2^n)-1 < (2^L)+1 is fulfilled, where n is degree of polynomial then is
+    raised error
+    """
+    lamb = 1
+    first = 2 ** self.mq.n - 1
+    second = 2 ** lamb + 1
+    
+    while second < first:
+      if gcd(first, second) == 1:
+        return lamb
+      
+      lamb += 1
+      second = 2 ** lamb + 1
+      
+    raise ValueError('Lambda not found for n = ' + str(self.mq.n))
+
+
+
+class HFE(PolynomialBasedTrapdoor):
   """
   Hidden Field Equations
   """
@@ -509,12 +512,19 @@ class HFE(MQ):
       else:
         X[key] = B[key]
     
+    # equation in HFE form
     pprint(X)
     #
     for key in X:
       exponent = int(key[2:])
-    #square_polynomial
-    #multiply_polynomials
+      if exponent > 1:
+        times = exponent / 2
+        print(left_side)
+        squared = self.square_polynomial(left_side, times, self.irred_polynomial_rem)
+        print(left_side)
+        
+        if exponent % 2:
+          self.multiply_polynomials(squared, right_side, self.irred_polynomial_rem)
     
 
 # Main
@@ -588,10 +598,14 @@ def create_polynomial(elements, degree):
       result.append(x_var + str(result[j]))
   
   return result
-
+#1.HFE ak je d = 4 tak mam zabezpecit aby to vygenerovalo L^4
+#2.HFE co znamena nemalo byt nic velke? napisat moznost o ruletovom vybere
+#3.STS netreba teda aby v nasledujucej vrstve boli premenne z predchadzajucej vrstvy len nove premenne
+#
+#
 if __name__ == "__main__":
-  mq = MQ(3, 24)
+  mq = MQ(3, 24) 
   
   #sts = STS(mq, 4, [3, 4, 5, 5], [6, 6, 6, 6])
-  mia = MIA(mq)
-  #hfe = HFE(mq)
+  #mia = MIA(mq)
+  hfe = HFE(mq)
