@@ -394,8 +394,6 @@ class MIA(PolynomialBasedTrapdoor):
     self.logger.info('Creating instance of MIA')
     self.mq = MQ
     self._P = {}
-    self.irred_polynomial = None
-    self.irred_polynomial_rem = {}
     self._lambda = None
     self.create_trapdoor()
     
@@ -436,7 +434,7 @@ class MIA(PolynomialBasedTrapdoor):
       
       lamb += 1
       second = 2 ** lamb + 1
-      
+    
     raise ValueError('Lambda not found for n = ' + str(self.mq.n))
 
 
@@ -450,17 +448,15 @@ class HFE(PolynomialBasedTrapdoor):
     self.logger.info('Creating instance of HFE')
     self.mq = MQ
     self._P = {}
-    self.irred_polynomial = None
-    self.irred_polynomial_rem = {}
     self.d = 0
     self.create_trapdoor()
 
   def create_trapdoor(self):
-    #self.logger.info('Creating trapdoor for HFE')
-    left_side = self.mq.create_equation()
-    right_side = left_side.copy() # or dict(left_side)
+    self.logger.info('Creating trapdoor for HFE')
     self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
     self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
+    left_side = self.mq.create_equation()
+    right_side = left_side.copy() # or dict(left_side)
     
     # Let's create polynomial in HFE form
     C = {}
@@ -472,7 +468,7 @@ class HFE(PolynomialBasedTrapdoor):
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
     d_range = range(self.mq.n, self.mq.n + 3) # pick d that should be small ?!
     self.d = choice(d_range) # pick random value from range
-    
+    self.d = 5
     print(self.irred_polynomial, self.d)
     x_raised_to = MQ.variable_x + MQ.operator_power
     
@@ -520,17 +516,24 @@ class HFE(PolynomialBasedTrapdoor):
     # equation in HFE form
     pprint(X)
     #
+    subs = {}
     for key in X:
       exponent = int(key[2:])
       if exponent > 1:
         times = exponent / 2
-        print(left_side)
         squared = self.square_polynomial(left_side, times, self.irred_polynomial_rem)
-        print(left_side)
         
         if exponent % 2:
-          self.multiply_polynomials(squared, right_side, self.irred_polynomial_rem)
+          multiplied = self.multiply_polynomials(squared, right_side, self.irred_polynomial_rem)
+          subs[key] = multiplied
+        else:
+          subs[key] = squared
+      
+      else:
+        subs[key] = left_side
     
+    print('---')
+    pprint(subs)
 
 # Main
 class MHRS:
@@ -609,7 +612,7 @@ def create_polynomial(elements, degree):
 #
 #
 if __name__ == "__main__":
-  mq = MQ(3, 24) 
+  mq = MQ(4, 24) 
   
   #sts = STS(mq, 4, [3, 4, 5, 5], [6, 6, 6, 6])
   #mia = MIA(mq)
