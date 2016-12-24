@@ -32,12 +32,12 @@ class MQ(object):
     n         -- pocet premennych | count of variables
     m         -- pocet rovnic | count of equations
   """
-  variable_x = 'x'
-  variable_y = 'y'
-  variable_lambda = 'L'
-  operator_plus = '+'
-  operator_mul = '*'
-  operator_power = '^'
+  VARIABLE_X = 'x'
+  VARIABLE_Y = 'y'
+  VARIABLE_LAMBDA = 'L'
+  OPERATOR_PLUS = '+'
+  OPERATOR_MUL = '*'
+  OPERATOR_POWER = '^'
   
   def __init__(self, n, m):
     self.logger = logging.getLogger(self.__class__.__name__)
@@ -52,13 +52,13 @@ class MQ(object):
     self.product = self.create_product()
     
   def create_product(self):
-    product = [MQ.variable_x + '1']
+    product = [MQ.VARIABLE_X + '1']
     
     n = self.n + 1
     for i in range(2, n):
-      product.append(MQ.variable_x + str(i))
+      product.append(MQ.VARIABLE_X + str(i))
       for j in range(1, i):
-        product.append(MQ.variable_x + str(j) + MQ.operator_mul + MQ.variable_x + str(i))
+        product.append(MQ.VARIABLE_X + str(j) + MQ.OPERATOR_MUL + MQ.VARIABLE_X + str(i))
 
     return product
     
@@ -66,13 +66,13 @@ class MQ(object):
     """
     Return equation in form x_1*Alpha^0 + x_2*Alpha^1 + ... + x_n*Alpha^(n-1),
     transformed into dictionary where keys are Alphas as strings 
-    (MQ.variable_lambda + MQ.operator_power + exponent) i.e. L^2
+    (MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER + exponent) i.e. L^2
     """
     X = {};
-    lambda_raised_to = MQ.variable_lambda + MQ.operator_power
+    lambda_raised_to = MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER
     
     for exponent in range(self.n):
-      X[lambda_raised_to + str(exponent)] = set([MQ.variable_x + str(exponent + 1)])
+      X[lambda_raised_to + str(exponent)] = set([MQ.VARIABLE_X + str(exponent + 1)])
     
     return X
 
@@ -101,7 +101,7 @@ class MQ(object):
     S = R.quotient(irreducible_polynomial, key)
     a = S.gen()
     
-    key_raised_to = key + MQ.operator_power
+    key_raised_to = key + MQ.OPERATOR_POWER
     
     remainder = {key_raised_to + '0': a ** 0}
     
@@ -213,7 +213,7 @@ class STS(object):
     self.logger.info('creating trapdoor for STS')
 
     # ake premenne sa maju vyskytovat v rovniciach
-    should_contains = [MQ.variable_x + str(i) for i in range(1, self.mq.n + 1)]
+    should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
     
     for layer in range(self.layers_count):     
       if self.variables_in_layer[layer] > self.mq.n:
@@ -232,7 +232,7 @@ class STS(object):
       i = 0
       # pre pocet rovnic vo vrstve
       while i < self.equations_in_layer[layer]:
-        actual_equation = MQ.variable_y + str(i)
+        actual_equation = MQ.VARIABLE_Y + str(i)
         
         rand = randint(self.variables_in_layer[layer], triangle_number)
         self._P[actual_equation] = set(sub_product[:rand])
@@ -259,8 +259,8 @@ class STS(object):
           actual_eq_len = len(self._P[actual_equation])
           
           for j in range(i):
-            if actual_eq_len == len(self._P[MQ.variable_y + str(j)]):
-              if self._P[actual_equation] == self._P[MQ.variable_y + str(j)]:
+            if actual_eq_len == len(self._P[MQ.VARIABLE_Y + str(j)]):
+              if self._P[actual_equation] == self._P[MQ.VARIABLE_Y + str(j)]:
                 print("Equation " + str(i + 1) + " equals with equation " + str(j + 1) + " -> creating new equation")
                 i -= 1
                 
@@ -281,7 +281,7 @@ class PolynomialBasedTrapdoor(MQ):
     """
     Raises the polynomial with exponent 2 n-times; polynomial^2^times
     """
-    lambda_raised_to = MQ.variable_lambda + MQ.operator_power
+    lambda_raised_to = MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER
     
     # create copy of dictionary
     polynomial_copy = {}
@@ -345,18 +345,18 @@ class PolynomialBasedTrapdoor(MQ):
       product = ''
       
       if left_value < right_value:
-        product = left_value + MQ.operator_mul + right_value
+        product = left_value + MQ.OPERATOR_MUL + right_value
       else:
-        product = right_value + MQ.operator_mul + left_value
+        product = right_value + MQ.OPERATOR_MUL + left_value
       
       self.insert_value(dictonary, key, product, as_set)
   
   def insert_value(self, dictonary, key, value, as_set):
     # fix as sagemath return L^0 as 1 and L^1 as L
     if key == '1':
-      key = MQ.variable_lambda + '^0'
-    elif key == MQ.variable_lambda:
-      key = MQ.variable_lambda + '^1'
+      key = MQ.VARIABLE_LAMBDA + '^0'
+    elif key == MQ.VARIABLE_LAMBDA:
+      key = MQ.VARIABLE_LAMBDA + '^1'
     
     self.logger.debug("Inserting at key = %s, value = %s", key, value)
     self.logger.debug("Before inserting\n%s", dictonary)
@@ -387,7 +387,7 @@ class MIA(PolynomialBasedTrapdoor):
   7. roznasobit zatvorky
   8. vyjmut premenne pre dane lambdy
   """
-  lambda_raised_to = MQ.variable_lambda + MQ.operator_power
+  lambda_raised_to = MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER
   
   def __init__(self, MQ):
     self.logger = logging.getLogger(self.__class__.__name__)
@@ -401,8 +401,8 @@ class MIA(PolynomialBasedTrapdoor):
     self._lambda = self.compute_lambda()
     left_side = self.mq.create_equation()
     right_side = self.mq.create_equation()#left_side.copy() # or dict(left_side)
-    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
-    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
+    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.VARIABLE_X)
+    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
     
     self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
@@ -453,8 +453,8 @@ class HFE(PolynomialBasedTrapdoor):
 
   def create_trapdoor(self):
     self.logger.info('Creating trapdoor for HFE')
-    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.variable_x)
-    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.variable_lambda)
+    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.VARIABLE_X)
+    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
     left_side = self.mq.create_equation()
     right_side = left_side.copy() # or dict(left_side)
     
@@ -470,7 +470,7 @@ class HFE(PolynomialBasedTrapdoor):
     self.d = choice(d_range) # pick random value from range
     self.d = 5
     print(self.irred_polynomial, self.d)
-    x_raised_to = MQ.variable_x + MQ.operator_power
+    x_raised_to = MQ.VARIABLE_X + MQ.OPERATOR_POWER
     
     while True:
       result = 2 ** i
