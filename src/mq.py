@@ -504,30 +504,28 @@ class HFE(PolynomialBasedTrapdoor):
     print('---')
     
     for key_sub in subs: # for each x^0, x^1, x^2, ... x^d
-      if key_sub == 'x^0' or  key_sub == 'x^1':
+      if key_sub == 'x^1' or key_sub == 'x^0':
         continue
       
       for key_lambda in subs[key_sub]: # for each L^0, L^1, L^2, ... L^(n - 1) in subs
         l_exponent = int(key_lambda[2:])
         print('key_sub=%s, key_lambda=%s, exponent=%s' % (key_sub, key_lambda, l_exponent))
-        print('values=%s' % subs[key_sub][key_lambda])
         
         for equation in HFE[key_sub]:
           multiples = str(equation).split(' + ')
-          print('4 hodnoty nasobenia', multiples)
+          
           
           for m in multiples:
             if len(m) < 3:
               m = self.edit_key(m)
-            print('5 vybrana ', m)
+            print('4 hodnoty nasobenia %s, -> %s' % (multiples, m))
             
             m_exponent = int(m[2:])
             sum_exponent = m_exponent + l_exponent
+            value = subs[key_sub][key_lambda].copy()
+            print('sucet exponentov=%s, vkladat sa bude=%s' % (sum_exponent, value))
             
-            value = subs[key_sub][key_lambda]
-            print('6', sum_exponent, 'vkladat sa bude ', value)
-            
-            if sum_exponent < self.mq.n:
+            if sum_exponent < self.mq.n:  
               key = MQ.LAMBDA_RAISED_TO + str(sum_exponent)  
               
               self.insert_value(self._P, key, value, False)
@@ -539,8 +537,9 @@ class HFE(PolynomialBasedTrapdoor):
               for remainder in remainders:
                 if len(remainder) < 3:
                   remainder = self.edit_key(remainder)
-                
-                self.insert_value(self._P, remainder, value, False)
+                # care - creating copy of value because it will be inserted more
+                # times and result would contain several references on it
+                self.insert_value(self._P, remainder, value.copy(), False)
                 print(self._P)
         print('\t----next lambda key----')
       print('----next subs----')
