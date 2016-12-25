@@ -38,6 +38,8 @@ class MQ(object):
   OPERATOR_PLUS = '+'
   OPERATOR_MUL = '*'
   OPERATOR_POWER = '^'
+  X_RAISED_TO = VARIABLE_X + OPERATOR_POWER
+  LAMBDA_RAISED_TO = VARIABLE_LAMBDA + OPERATOR_POWER
   
   def __init__(self, n, m):
     self.logger = logging.getLogger(self.__class__.__name__)
@@ -50,16 +52,17 @@ class MQ(object):
     self.n = n
     self.m = m
     self.product = self.create_product()
-    
+  
   def create_product(self):
     product = [MQ.VARIABLE_X + '1']
     
     n = self.n + 1
     for i in range(2, n):
       product.append(MQ.VARIABLE_X + str(i))
+      
       for j in range(1, i):
         product.append(MQ.VARIABLE_X + str(j) + MQ.OPERATOR_MUL + MQ.VARIABLE_X + str(i))
-
+    
     return product
     
   def create_equation(self):
@@ -75,7 +78,7 @@ class MQ(object):
       X[lambda_raised_to + str(exponent)] = set([MQ.VARIABLE_X + str(exponent + 1)])
     
     return X
-
+  
   def create_irreducible_polynomial(self, variable):
     """
     http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildIrred_list
@@ -127,7 +130,7 @@ class AffineTransformation:
       self.transformation_type = 'y'
     else:
       raise ValueError("Transformation type should be 'S' or 'T'")
-      
+    
     self.dimension = dimension
     self.group = AffineGroup(dimension, GF(2))
     self.element = self.group.random_element()
@@ -145,10 +148,10 @@ class AffineTransformation:
       for column in range(self.dimension):
         if self.matrix[row][column] == 1:
           equation.append(self.transformation_type + str(column + 1))
-
+      
       if self.vector[row] == 1:
         equation.append('1')
-
+      
       self.transformation[self.transformation_type + str(row + 1)] = equation
 
 
@@ -174,7 +177,7 @@ class UOV(object):
     #super(UOV, slef).get_dimension
     print(self._P)
     
- 
+
  
 class STS(object):
   """
@@ -211,16 +214,16 @@ class STS(object):
   
   def create_trapdoor(self):
     self.logger.info('creating trapdoor for STS')
-
+    
     # ake premenne sa maju vyskytovat v rovniciach
     should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
     
-    for layer in range(self.layers_count):     
+    for layer in range(self.layers_count):
       if self.variables_in_layer[layer] > self.mq.n:
         raise ValueError('Count of variables in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(self.mq.n))
       
       variables_count = self.variables_in_layer[layer]
-      triangle_number = variables_count * (variables_count + 1) / 2 
+      triangle_number = variables_count * (variables_count + 1) / 2
       
       if self.equations_in_layer[layer] > triangle_number:
         raise ValueError('Count of equations in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(triangle_number))
@@ -243,7 +246,7 @@ class STS(object):
           contain_vars -= set(variables.split('*'))
           if len(contain_vars) == 0:
             break
-
+        
         # ak zostali nejake premenne tak ich treba pridat do rovnice
         for remaining_vars in contain_vars:
           num = int(remaining_vars[1:])
@@ -251,7 +254,7 @@ class STS(object):
           triangle_number_max = num * (num + 1) / 2
           triangle_number_max -= 1
           self._P[actual_equation] |= set([self.mq.product[randint(triangle_number_min, triangle_number_max)]])
-
+        
         print("  Equation " + str(i + 1) + ": " + str(self._P[actual_equation]))
         
         # kontrolujem ci sa predchadzajuca rovnica nezhoduje s aktualnou
@@ -263,7 +266,7 @@ class STS(object):
               if self._P[actual_equation] == self._P[MQ.VARIABLE_Y + str(j)]:
                 print("Equation " + str(i + 1) + " equals with equation " + str(j + 1) + " -> creating new equation")
                 i -= 1
-                
+        
         i += 1
         shuffle(sub_product)
     #print(self._P)
@@ -338,7 +341,7 @@ class PolynomialBasedTrapdoor(MQ):
       self.logger.debug('\n--------------------------')
     return result
   
-  def choose_operation(self, dictonary, key, left_value, right_value, as_set):    
+  def choose_operation(self, dictonary, key, left_value, right_value, as_set):
     if left_value == right_value:
       self.insert_value(dictonary, key, left_value, as_set)
     else:
@@ -352,11 +355,8 @@ class PolynomialBasedTrapdoor(MQ):
       self.insert_value(dictonary, key, product, as_set)
   
   def insert_value(self, dictonary, key, value, as_set):
-    # fix as sagemath return L^0 as 1 and L^1 as L
-    if key == '1':
-      key = MQ.VARIABLE_LAMBDA + '^0'
-    elif key == MQ.VARIABLE_LAMBDA:
-      key = MQ.VARIABLE_LAMBDA + '^1'
+    if len(key) < 3:
+      key = self.edit_key(key)
     
     self.logger.debug("Inserting at key = %s, value = %s", key, value)
     self.logger.debug("Before inserting\n%s", dictonary)
@@ -371,6 +371,15 @@ class PolynomialBasedTrapdoor(MQ):
         dictonary[key] = set([value]) # new set with elements from both s and t
       else:
         dictonary[key] = value # new set with elements from both s and t
+  
+  def edit_key(self, key):
+    # fix as sagemath return L^0 as 1 and L^1 as L
+    if key == '1':
+      return MQ.VARIABLE_LAMBDA + '^0'
+    elif key == MQ.VARIABLE_LAMBDA:
+      return MQ.VARIABLE_LAMBDA + '^1'
+    else:
+      raise ValueError('Key \'%s\' not found ', key)
 
 
 
@@ -443,6 +452,7 @@ class HFE(PolynomialBasedTrapdoor):
   """
   Hidden Field Equations
   """
+  
   def __init__(self, MQ):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of HFE')
@@ -458,34 +468,108 @@ class HFE(PolynomialBasedTrapdoor):
     left_side = self.mq.create_equation()
     right_side = left_side.copy() # or dict(left_side)
     
-    # Let's create polynomial in HFE form
-    C = {}
-    B = {}
-    A = {}
-    i = j = 0
-    
-    count = (2 ** self.mq.n) - 1 # modulo
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
     d_range = range(self.mq.n, self.mq.n + 3) # pick d that should be small ?!
     self.d = choice(d_range) # pick random value from range
     self.d = 5
-    print(self.irred_polynomial, self.d)
-    x_raised_to = MQ.VARIABLE_X + MQ.OPERATOR_POWER
+    self.logger.debug('Ireducible polynomial %s, polynomial degree d = %s', self.irred_polynomial, self.d )
+    
+    HFE = self.create_hfe_polynomial(self.d)
+    HFE['x^1'] = set(['L^1'])
+    HFE['x^2'] = set(['L^2 + L^1 + 1'])
+    HFE['x^3'] = set(['L^3 + 1'])
+    HFE['x^4'] = set(['L^1'])
+    HFE['x^5'] = set(['1'])
+    pprint(HFE)
+    self.logger.debug('Created polynomial in HFE form %s', self.irred_polynomial)
+    #--------------------------------------------------------------------------#
+    # umocnenie a nasobenie rovnic
+    subs = {}
+    for key in HFE:
+      exponent = int(key[2:])
+      
+      if exponent > 1:
+        times = exponent / 2
+        squared = self.square_polynomial(left_side, times, self.irred_polynomial_rem)
+        
+        if exponent % 2:
+          multiplied = self.multiply_polynomials(squared, right_side, self.irred_polynomial_rem)
+          subs[key] = multiplied
+        else:
+          subs[key] = squared
+      else:
+        subs[key] = left_side
+    
+    #--------------------------------------------------------------------------#
+    print('---')
+    
+    for key_sub in subs: # for each x^0, x^1, x^2, ... x^d
+      if key_sub == 'x^0' or  key_sub == 'x^1':
+        continue
+      
+      for key_lambda in subs[key_sub]: # for each L^0, L^1, L^2, ... L^(n - 1) in subs
+        l_exponent = int(key_lambda[2:])
+        print('key_sub=%s, key_lambda=%s, exponent=%s' % (key_sub, key_lambda, l_exponent))
+        print('values=%s' % subs[key_sub][key_lambda])
+        
+        for equation in HFE[key_sub]:
+          multiples = str(equation).split(' + ')
+          print('4 hodnoty nasobenia', multiples)
+          
+          for m in multiples:
+            if len(m) < 3:
+              m = self.edit_key(m)
+            print('5 vybrana ', m)
+            
+            m_exponent = int(m[2:])
+            sum_exponent = m_exponent + l_exponent
+            
+            value = subs[key_sub][key_lambda]
+            print('6', sum_exponent, 'vkladat sa bude ', value)
+            
+            if sum_exponent < self.mq.n:
+              key = MQ.LAMBDA_RAISED_TO + str(sum_exponent)  
+              
+              self.insert_value(self._P, key, value, False)
+              print(self._P)
+            else:
+              remainders = self.irred_polynomial_rem[MQ.LAMBDA_RAISED_TO + str(sum_exponent)]
+              remainders = str(remainders).split(' + ')
+              
+              for remainder in remainders:
+                if len(remainder) < 3:
+                  remainder = self.edit_key(remainder)
+                
+                self.insert_value(self._P, remainder, value, False)
+                print(self._P)
+        print('\t----next lambda key----')
+      print('----next subs----')
+    
+    #self._P[MQ.LAMBDA_RAISED_TO + '0'] ^= HFE[MQ.X_RAISED.TO + '0']
+    pprint(self._P)
+          
+  def create_hfe_polynomial(self, degree):
+    # Let's create polynomial in HFE form
+    C = {}
+    B = {}
+    A = {}
+    i = 0
+    j = 0
     
     while True:
-      result = 2 ** i
+      power_i = 2 ** i
       
-      if result > self.d:
+      if power_i > degree:
         break
       
       while True:
-        sum_result = result + (2 ** j)
+        power_sum = power_i + (2 ** j)
         
-        if sum_result <= self.d:
-          self.logger.debug('i=' + str(i) +', j=' + str(j) + ', 2^i + 2^j=' + str(sum_result))
+        if power_sum <= degree:
+          self.logger.debug('i=' + str(i) +', j=' + str(j) + ', 2^i + 2^j=' + str(power_sum))
           c_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
           c_value = set([self.irred_polynomial_rem[c_key]]) # vyber nahodny zvysok po deleni polynomom
-          x_key = x_raised_to + str(sum_result)
+          x_key = self.X_RAISED_TO + str(power_sum)
           
           if x_key in C:
             C[x_key] ^= set(c_value)
@@ -498,42 +582,23 @@ class HFE(PolynomialBasedTrapdoor):
           break
       
       b_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
-      B[x_raised_to + str(result)] = set([self.irred_polynomial_rem[b_key]]) # vyber nahodny zvysok po deleni polynomom
+      B[self.X_RAISED_TO + str(power_i)] = set([self.irred_polynomial_rem[b_key]]) # vyber nahodny zvysok po deleni polynomom
       i += 1
-    
+
     a_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
-    A[x_raised_to + '0'] = set([self.irred_polynomial_rem[b_key]]) # vyber nahodny zvysok po deleni polynomom
-    
-    X = C # just rename
-    X.update(A) # copy dict A to dict X
-    
+    A[self.X_RAISED_TO + '0'] = set([self.irred_polynomial_rem[a_key]]) # vyber nahodny zvysok po deleni polynomom
+    #--------------------------------------------------------------------------#
+    HFE = C # just rename
+    HFE.update(A) # copy dict A to dict X
+
     for key in B: # copy dict B to dict X
-      if key in X:
-        X[key] |= B[key]
+      if key in HFE:
+        HFE[key] |= B[key]
       else:
-        X[key] = B[key]
+        HFE[key] = B[key]
     
     # equation in HFE form
-    pprint(X)
-    #
-    subs = {}
-    for key in X:
-      exponent = int(key[2:])
-      if exponent > 1:
-        times = exponent / 2
-        squared = self.square_polynomial(left_side, times, self.irred_polynomial_rem)
-        
-        if exponent % 2:
-          multiplied = self.multiply_polynomials(squared, right_side, self.irred_polynomial_rem)
-          subs[key] = multiplied
-        else:
-          subs[key] = squared
-      
-      else:
-        subs[key] = left_side
-    
-    print('---')
-    pprint(subs)
+    return HFE
 
 # Main
 class MHRS:
@@ -606,11 +671,13 @@ def create_polynomial(elements, degree):
       result.append(x_var + str(result[j]))
   
   return result
+
 #1.HFE ak je d = 4 tak mam zabezpecit aby to vygenerovalo L^4
 #2.HFE co znamena nemalo byt nic velke? napisat moznost o ruletovom vybere
 #3.STS netreba teda aby v nasledujucej vrstve boli premenne z predchadzajucej vrstvy len nove premenne
 #
-#
+# compute_remainder: spravit v metode nech L a 1 vracia uz ako L^1 a L^0
+# subs: optimalizacia
 if __name__ == "__main__":
   mq = MQ(4, 24) 
   
