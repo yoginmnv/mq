@@ -94,25 +94,6 @@ class MQ(object):
     of minimal weight over the Gladis field of 2 elements.
     """
     return GF(2)[variable](GF2X_BuildRandomIrred_list(self.n))
-  
-  def compute_remainder(self, irreducible_polynomial, key):
-    """
-    Return dictionary with remainders after raising irreducible polynomial 
-    over its size
-    """
-    R = PolynomialRing(GF(2), key)
-    S = R.quotient(irreducible_polynomial, key)
-    a = S.gen()
-    
-    key_raised_to = key + MQ.OPERATOR_POWER
-    
-    remainder = {key_raised_to + '0': a ** 0}
-    
-    count = (self.n ** 2) - 1
-    for exponent in range(1, count):
-      remainder[key_raised_to + str(exponent)] = remainder[key_raised_to + str(exponent - 1)] * a
-    
-    return remainder
 
 class AffineTransformation:
   def __init__(self, dimension, transformation_type):
@@ -280,6 +261,38 @@ class STS(object):
 
 
 class PolynomialBasedTrapdoor(MQ):
+  def compute_remainder(self, irreducible_polynomial, key):
+    """
+    Return dictionary with remainders after raising irreducible polynomial 
+    over its size
+    """
+    R = PolynomialRing(GF(2), key)
+    S = R.quotient(irreducible_polynomial, key)
+    a = S.gen()
+    
+    key_raised_to = key + MQ.OPERATOR_POWER
+    
+    remainder = {key_raised_to + '0': a ** 0}
+    
+    count = (irreducible_polynomial.degree() ** 2) - 1
+    for exponent in range(1, count):
+      remainder[key_raised_to + str(exponent)] = remainder[key_raised_to + str(exponent - 1)] * a
+    
+    return remainder
+  
+  def choose_operation(self, dictonary, key, left_value, right_value, as_set):
+    if left_value == right_value:
+      self.insert_value(dictonary, key, left_value, as_set)
+    else:
+      product = ''
+      
+      if left_value < right_value:
+        product = left_value + MQ.OPERATOR_MUL + right_value
+      else:
+        product = right_value + MQ.OPERATOR_MUL + left_value
+      
+      self.insert_value(dictonary, key, product, as_set)  
+  
   def square_polynomial(self, polynomial, times, remainders):
     """
     Raises the polynomial with exponent 2 n-times; polynomial^2^times
@@ -341,19 +354,6 @@ class PolynomialBasedTrapdoor(MQ):
       self.logger.debug('\n--------------------------')
     return result
   
-  def choose_operation(self, dictonary, key, left_value, right_value, as_set):
-    if left_value == right_value:
-      self.insert_value(dictonary, key, left_value, as_set)
-    else:
-      product = ''
-      
-      if left_value < right_value:
-        product = left_value + MQ.OPERATOR_MUL + right_value
-      else:
-        product = right_value + MQ.OPERATOR_MUL + left_value
-      
-      self.insert_value(dictonary, key, product, as_set)
-  
   def insert_value(self, dictonary, key, value, as_set):
     if len(key) < 3:
       key = self.edit_key(key)
@@ -411,7 +411,7 @@ class MIA(PolynomialBasedTrapdoor):
     left_side = self.mq.create_equation()
     right_side = self.mq.create_equation()#left_side.copy() # or dict(left_side)
     self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.VARIABLE_X)
-    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
+    self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
     
     self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
@@ -464,9 +464,8 @@ class HFE(PolynomialBasedTrapdoor):
   def create_trapdoor(self):
     self.logger.info('Creating trapdoor for HFE')
     self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.VARIABLE_X)
-    self.irred_polynomial_rem = self.mq.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
-    left_side = self.mq.create_equation()
-    right_side = left_side.copy() # or dict(left_side)
+    self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
+    base_polynomial = self.mq.create_equation()
     
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
     d_range = range(self.mq.n, self.mq.n + 3) # pick d that should be small ?!
@@ -481,7 +480,7 @@ class HFE(PolynomialBasedTrapdoor):
     HFE['x^4'] = set(['L^1'])
     HFE['x^5'] = set(['1'])
     pprint(HFE)
-    self.logger.debug('Created polynomial in HFE form %s', self.irred_polynomial)
+    self.logger.debug('Created polynomial in HFE form %s' % HFE)
     #--------------------------------------------------------------------------#
     # umocnenie a nasobenie rovnic
     subs = {}
@@ -490,19 +489,19 @@ class HFE(PolynomialBasedTrapdoor):
       
       if exponent > 1:
         times = exponent / 2
-        squared = self.square_polynomial(left_side, times, self.irred_polynomial_rem)
+        squared = self.square_polynomial(base_polynomial, times, self.irred_polynomial_rem)
         
         if exponent % 2:
-          multiplied = self.multiply_polynomials(squared, right_side, self.irred_polynomial_rem)
+          multiplied = self.multiply_polynomials(squared, base_polynomial, self.irred_polynomial_rem)
           subs[key] = multiplied
         else:
           subs[key] = squared
       else:
-        subs[key] = left_side
-    
+        subs[key] = base_polynomial
+    self.logger.debug('Created polynomial in HFE form %s' % subs)
     #--------------------------------------------------------------------------#
     print('---')
-    
+    pprint(subs)
     for key_sub in subs: # for each x^0, x^1, x^2, ... x^d
       if key_sub == 'x^1' or key_sub == 'x^0':
         continue
@@ -678,8 +677,8 @@ def create_polynomial(elements, degree):
 # compute_remainder: spravit v metode nech L a 1 vracia uz ako L^1 a L^0
 # subs: optimalizacia
 if __name__ == "__main__":
-  mq = MQ(4, 24) 
+  mq = MQ(4, 24)
   
-  #sts = STS(mq, 4, [3, 4, 5, 5], [6, 6, 6, 6])
+  #sts = STS(mq, 2, [2, 4], [2, 2])
   #mia = MIA(mq)
   hfe = HFE(mq)
