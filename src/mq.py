@@ -71,6 +71,7 @@ class MQ(object):
     self._PS_product = self.substitute(self.trapdoor._P, self.S.transformation)
     
   def substitute(self, trapdoor, transformation):
+    exit(0)
     result = {}
     
     for key_trapdoor in trapdoor: # loop throug all keys(y1, y2, ...yn) in trapdoor
@@ -106,6 +107,12 @@ class MQ(object):
             self.insert_value(result, key_trapdoor, transformation_variable)
     
     pprint(result)
+  
+  def insert_value_list(self, array, value1, value2):
+    if value1 < value2:
+      array.append(value1 + MQ.OPERATOR_MUL + value2)
+    else:
+      array.append(value2 + MQ.OPERATOR_MUL + value1)
   
   def insert_value_ordered(self, dictionary, key, value1, value2):
     if value1 == value2:
@@ -178,7 +185,7 @@ class AffineTransformation:
 
 
 # MQ trapdoors
-class UOV(object):
+class UOV(MQ):
   def __init__(self):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of UOV')
@@ -186,9 +193,9 @@ class UOV(object):
     self.vinegar = []
     self._P = {}
     
-  def create_trapdoor(self, MQ):
+  def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for UOV')
-    self.mq = MQ
+    self.mq = mq
     # create list of variables that may occure in result
     variables = [MQ.VARIABLE_X + str(i) for i in range(1, mq.n + 1)]
     shuffle(variables)
@@ -207,17 +214,11 @@ class UOV(object):
     for i in range(vinegar_len): # loop through all vinegar variables
       for j in range(i + 1, vinegar_len):
         # insert product of vinegar variables arranged according to index
-        if self.vinegar[i] < self.vinegar[j]:
-          variables.append(self.vinegar[i] + MQ.OPERATOR_MUL + self.vinegar[j])
-        else:
-          variables.append(self.vinegar[j] + MQ.OPERATOR_MUL + self.vinegar[i])
-
+        self.mq.insert_value_list(variables, self.vinegar[i], self.vinegar[j])
+      
       for j in range(oil_len): # loop through all oil variables
         # insert product of oil and vinegar variables arranged according to index
-        if self.vinegar[i] < self.oil[j]:
-          variables.append(self.vinegar[i] + MQ.OPERATOR_MUL + self.oil[j])
-        else:
-          variables.append(self.oil[j] + MQ.OPERATOR_MUL + self.vinegar[i])
+        self.mq.insert_value_list(variables, self.vinegar[i], self.oil[j])
     
     self.logger.info('vinegar variables %s' % self.vinegar)
     self.logger.info('oil variables %s' % self.oil)
@@ -228,20 +229,14 @@ class UOV(object):
     lottery = [i for i in range(len(variables))]
     i = 1
     while i < mq.m + 1: # for each equation
-      nonlinear = False # ensuring that equation contain nonlinear variable
-      count = randint(c_min, c_max) # random count of variables in equation
       shuffle(lottery)
-
-      key = MQ.VARIABLE_Y + str(i)
-      self._P[key] = variables[lottery[0]]
+      count = randint(c_min, c_max) # random count of variables in equation
+      nonlinear = False # ensuring that equation contain nonlinear variable
       
-      if MQ.OPERATOR_MUL in variables[lottery[0]]:
-        nonlinear = True
-      
-      for j in range(1, count):
-        self._P[key] += MQ.EQUATION_SEPARATOR + variables[lottery[j]]
+      for j in range(count):
+        self.insert_value(self._P, MQ.VARIABLE_Y + str(i), variables[lottery[j]])
         
-        # condition added because of saving string comparasion cost
+        # if condition added because of saving string comparasion cost
         if nonlinear == False:
           if MQ.OPERATOR_MUL in variables[lottery[j]]:
             nonlinear = True
@@ -255,7 +250,7 @@ class UOV(object):
 
 
 
-class STS(object):
+class STS(MQ):
   """
   Class for Stepwise Triangular Systems.
   
