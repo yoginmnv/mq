@@ -60,19 +60,11 @@ class MQ(object):
   
   def set_trapdoor(self, trapdoor):
     self.trapdoor = trapdoor
-    self.trapdoor.create_trapdoor(self)
+    self.trapdoor.create_trapdoor(self) # create private key
     self.S = AffineTransformation(self.n, 'S') # private key
-    self.logger.info('Transformation S=%s' % self.S.transformation)
     self.T = AffineTransformation(self.n, 'T') # private key
-    self.logger.info('Transformation T=%s' % self.T.transformation)
-    
-    pprint(self.S.transformation)
-    pprint(self.trapdoor._P)
-    print('---')
     self._PS_product = self.substitute_and_multiply(self.trapdoor._P, self.S.transformation)
-    print('---')
-    pprint(self.T.transformation)
-    self.T_PS_product = self.substitute(self.T.transformation, self._PS_product)
+    self.T_PS_product = self.substitute(self.T.transformation, self._PS_product) # public key
   
   def substitute_and_multiply(self, trapdoor, transformation_s):
     result = {}
@@ -88,22 +80,22 @@ class MQ(object):
             for eq2_var in eq2:
               if eq1_var == '1':
                 if eq2_var == '1':
-                  self.insert_value_dictionary(result, key, '1')
+                  self.insert_value_dictionary(result, key, '1', True)
                 else:
-                  self.insert_value_dictionary(result, key, eq2_var)
+                  self.insert_value_dictionary(result, key, eq2_var, True)
               elif eq2_var == '1':
-                self.insert_value_dictionary(result, key, eq1_var)
+                self.insert_value_dictionary(result, key, eq1_var, True)
               else:
-                self.insert_value_ordered(result, key, eq1_var, eq2_var)
+                self.insert_value_ordered(result, key, eq1_var, eq2_var, True)
         
         elif variable == '1':
-          self.insert_value_dictionary(result, key, '1')
+          self.insert_value_dictionary(result, key, '1', True)
         
         else:
           for transformation_variable in transformation_s[variable].split(MQ.EQUATION_SEPARATOR):
-            self.insert_value_dictionary(result, key, transformation_variable)
+            self.insert_value_dictionary(result, key, transformation_variable, True)
     
-    pprint(result)
+    self.logger.info('_P o S=%s' % result)
     return result
   
   def substitute(self, transformation_t, PS):
@@ -114,10 +106,11 @@ class MQ(object):
       
       for variable in variables:
         if variable == '1':
-          self.insert_value_dictionary(result, key, '1')
+          self.insert_value_dictionary(result, key, '1', True)
         else:
-          self.insert_value_dictionary(result, key, PS[variable])
+          self.insert_value_dictionary(result, key, PS[variable], False)
     
+    self.logger.info('T o _P o S=%s' % result)
     return result
   
   def insert_value_list(self, array, value1, value2):
@@ -126,24 +119,34 @@ class MQ(object):
     else:
       array.append(value2 + MQ.OPERATOR_MUL + value1)
   
-  def insert_value_ordered(self, dictionary, key, value1, value2):
+  def insert_value_ordered(self, dictionary, key, value1, value2, as_set):
     if value1 == value2:
-      self.insert_value_dictionary(dictionary, key, value1)
+      self.insert_value_dictionary(dictionary, key, value1, as_set)
     elif value1 < value2:
-      self.insert_value_dictionary(dictionary, key, value1 + MQ.OPERATOR_MUL + value2)
+      self.insert_value_dictionary(dictionary, key, value1 + MQ.OPERATOR_MUL + value2, as_set)
     else:
-      self.insert_value_dictionary(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1)
+      self.insert_value_dictionary(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1, as_set)
   
-  def insert_value_dictionary(self, dictionary, key, value):
+  def insert_value_dictionary(self, dictionary, key, value, as_set):
+#    if len(key) < 3:
+#      key = self.edit_key(key)
+    
     self.logger.debug("Inserting at key = %s, value = %s" % (key, value))
-    self.logger.debug("Dictionary fefore inserting\n%s", dictionary)
+    self.logger.debug("Dictionary before inserting\n%s", dictionary)
+    
+    if key in dictionary:
+      if as_set == True:
+        dictionary[key] ^= set([value]) # new set with elements in either s or t but not both
+      else:
+        dictionary[key] ^= value # new set with elements in either s or t but not both
+    else:
+      if as_set == True:
+        dictionary[key] = set([value]) # new set with elements from both s and t
+      else:
+        dictionary[key] = value # new set with elements from both s and t
     
     self.logger.debug(dictionary)
-    if key in dictionary:
-      dictionary[key] ^= set([value]) # new set with elements in either s or t but not both
-    else:
-      dictionary[key] = set([value]) # new set with elements from both s and t
-    self.logger.debug(dictionary)
+
 
 
 class AffineTransformation(object):
@@ -194,19 +197,23 @@ class AffineTransformation(object):
         else:
           transformation[row_index] = '1'
     
+    self.logger.info('Transformation %s=%s' % (self.transf_type, transformation))
     return transformation
 
 
 
 # MQ trapdoors
 class UOV(MQ):
+  """
+  Unbalanced oil and vinegar
+  """
   def __init__(self):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of UOV')
     self.oil = []
     self.vinegar = []
     self._P = {}
-    
+  
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for UOV')
     self.mq = mq
@@ -224,15 +231,15 @@ class UOV(MQ):
     oil_len = len(self.oil)
     variables.append('1')
     
-    # add product of variables(vinegar*vinegar, vinegar*oil) that may be used in equation
+    # add product of variables(vinegar*vinegar, vinegar*oil) that may be occure in equation
     for i in range(vinegar_len): # loop through all vinegar variables
       for j in range(i + 1, vinegar_len):
         # insert product of vinegar variables arranged according to index
-        self.mq.insert_value_list(variables, self.vinegar[i], self.vinegar[j])
+        self.insert_value_list(variables, self.vinegar[i], self.vinegar[j])
       
       for j in range(oil_len): # loop through all oil variables
         # insert product of oil and vinegar variables arranged according to index
-        self.mq.insert_value_list(variables, self.vinegar[i], self.oil[j])
+        self.insert_value_list(variables, self.vinegar[i], self.oil[j])
     
     self.logger.info('Vinegar variables %s' % self.vinegar)
     self.logger.info('Oil variables %s' % self.oil)
@@ -243,12 +250,12 @@ class UOV(MQ):
     lottery = [i for i in range(len(variables))]
     i = 1
     while i < mq.m + 1: # for each equation
-      shuffle(lottery)
-      count = randint(c_min, c_max) # random count of variables in equation
-      nonlinear = False # ensuring that equation contain nonlinear variable
+      shuffle(lottery) # shuffle values
+      count = randint(c_min, c_max) # random count of variables for equation
+      nonlinear = False # ensuring that equation contain nonlinear variables
       
-      for j in range(count):
-        self.insert_value_dictionary(self._P, MQ.VARIABLE_Y + str(i), variables[lottery[j]])
+      for j in range(count): # insert count variables into dictionary
+        self.insert_value_dictionary(self._P, MQ.VARIABLE_Y + str(i), variables[lottery[j]], True)
         
         # if condition added because of saving string comparasion cost
         if nonlinear == False:
@@ -260,7 +267,8 @@ class UOV(MQ):
       
       i += 1
     
-    self.logger.info('P\'=%s' % self._P)
+    self.logger.info('_P=%s' % self._P)
+    return self._P
 
 
 
@@ -430,19 +438,6 @@ class PolynomialBasedTrapdoor(MQ):
     
     return remainder
   
-  def choose_operation(self, dictonary, key, left_value, right_value, as_set):
-    if left_value == right_value:
-      self.insert_value(dictonary, key, left_value, as_set)
-    else:
-      product = ''
-      
-      if left_value < right_value:
-        product = left_value + MQ.OPERATOR_MUL + right_value
-      else:
-        product = right_value + MQ.OPERATOR_MUL + left_value
-      
-      self.insert_value(dictonary, key, product, as_set)  
-  
   def square_polynomial(self, polynomial, times, remainders):
     """
     Raises the polynomial with exponent 2 n-times; polynomial^2^times
@@ -491,36 +486,18 @@ class PolynomialBasedTrapdoor(MQ):
             key = MIA.lambda_raised_to + str(exponent_sum)
             
             if exponent_sum < self.mq.n:
-              self.choose_operation(result, key, left_value, right_value, True)
+              self.insert_value_ordered(result, key, left_value, right_value, True)
               self.logger.debug("After inserting\n%s", result)
             else:
               ired_keys = str(self.irred_polynomial_rem[key]).split(' + ')
               
               for ired_key in ired_keys:
-                self.choose_operation(result, ired_key, left_value, right_value, True)
+                self.insert_value_ordered(result, ired_key, left_value, right_value, True)
                 self.logger.debug("After inserting\n%s", result)
               
           self.logger.debug("\n-------------")
       self.logger.debug('\n--------------------------')
     return result
-  
-  def insert_value(self, dictonary, key, value, as_set):
-    if len(key) < 3:
-      key = self.edit_key(key)
-    
-    self.logger.debug("Inserting at key = %s, value = %s", key, value)
-    self.logger.debug("Before inserting\n%s", dictonary)
-    
-    if key in dictonary:
-      if as_set == True:
-        dictonary[key] ^= set([value]) # new set with elements in either s or t but not both
-      else:
-        dictonary[key] ^= value # new set with elements in either s or t but not both
-    else:
-      if as_set == True:
-        dictonary[key] = set([value]) # new set with elements from both s and t
-      else:
-        dictonary[key] = value # new set with elements from both s and t
   
   def edit_key(self, key):
     # fix as sagemath return L^0 as 1 and L^1 as L
