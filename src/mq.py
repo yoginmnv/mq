@@ -116,13 +116,13 @@ class MQ(object):
   
   def insert_value_ordered(self, dictionary, key, value1, value2):
     if value1 == value2:
-      self.insert_value(dictionary, key, value1)
+      self.insert_value_dictionary(dictionary, key, value1)
     elif value1 < value2:
-      self.insert_value(dictionary, key, value1 + MQ.OPERATOR_MUL + value2)
+      self.insert_value_dictionary(dictionary, key, value1 + MQ.OPERATOR_MUL + value2)
     else:
-      self.insert_value(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1)
+      self.insert_value_dictionary(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1)
   
-  def insert_value(self, dictionary, key, value):
+  def insert_value_dictionary(self, dictionary, key, value):
     self.logger.debug("Inserting at key = %s, value = %s" % (key, value))
     self.logger.debug("Dictionary fefore inserting\n%s", dictionary)
     
@@ -234,7 +234,7 @@ class UOV(MQ):
       nonlinear = False # ensuring that equation contain nonlinear variable
       
       for j in range(count):
-        self.insert_value(self._P, MQ.VARIABLE_Y + str(i), variables[lottery[j]])
+        self.insert_value_dictionary(self._P, MQ.VARIABLE_Y + str(i), variables[lottery[j]])
         
         # if condition added because of saving string comparasion cost
         if nonlinear == False:
