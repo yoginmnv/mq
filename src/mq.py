@@ -68,10 +68,13 @@ class MQ(object):
     
     pprint(self.S.transformation)
     pprint(self.trapdoor._P)
-    self._PS_product = self.substitute(self.trapdoor._P, self.S.transformation)
-    #self.T_PS_product = self.substitute(self._PS_product, self.T.transformation)
+    print('---')
+    self._PS_product = self.substitute_and_multiply(self.trapdoor._P, self.S.transformation)
+    print('---')
+    pprint(self.T.transformation)
+    self.T_PS_product = self.substitute(self.T.transformation, self._PS_product)
   
-  def substitute(self, trapdoor, transformation):
+  def substitute_and_multiply(self, trapdoor, transformation_s):
     result = {}
     
     for key in trapdoor: # loop throug all keys(y1, y2, ...yn) in trapdoor
@@ -79,8 +82,8 @@ class MQ(object):
         if MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
           var = variable.split(MQ.OPERATOR_MUL)
           
-          eq1 = transformation[var[0]].split(MQ.EQUATION_SEPARATOR)
-          eq2 = transformation[var[1]].split(MQ.EQUATION_SEPARATOR)
+          eq1 = transformation_s[var[0]].split(MQ.EQUATION_SEPARATOR)
+          eq2 = transformation_s[var[1]].split(MQ.EQUATION_SEPARATOR)
           for eq1_var in eq1:
             for eq2_var in eq2:
               if eq1_var == '1':
@@ -97,10 +100,25 @@ class MQ(object):
           self.insert_value_dictionary(result, key, '1')
         
         else:
-          for transformation_variable in transformation[variable].split(MQ.EQUATION_SEPARATOR):
+          for transformation_variable in transformation_s[variable].split(MQ.EQUATION_SEPARATOR):
             self.insert_value_dictionary(result, key, transformation_variable)
     
     pprint(result)
+    return result
+  
+  def substitute(self, transformation_t, PS):
+    result = {}
+    
+    for key in transformation_t:
+      variables = transformation_t[key].split(MQ.EQUATION_SEPARATOR)
+      
+      for variable in variables:
+        if variable == '1':
+          self.insert_value_dictionary(result, key, '1')
+        else:
+          self.insert_value_dictionary(result, key, PS[variable])
+    
+    return result
   
   def insert_value_list(self, array, value1, value2):
     if value1 < value2:
