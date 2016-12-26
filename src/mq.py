@@ -46,7 +46,7 @@ class MQ(object):
   X_RAISED_TO = VARIABLE_X + OPERATOR_POWER
   LAMBDA_RAISED_TO = VARIABLE_LAMBDA + OPERATOR_POWER
   
-  def __init__(self, n, m):
+  def __init__(self, n, m, trapdoor):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of MQ')
     if( n < 1 ):
@@ -56,73 +56,145 @@ class MQ(object):
     
     self.n = n
     self.m = m
-
+    self.set_trapdoor(trapdoor)
+  
+  def set_trapdoor(self, trapdoor):
+    self.trapdoor = trapdoor
+    self.trapdoor.create_trapdoor(self)
+    self.S = AffineTransformation(self.n) # private key
+    self.logger.info('Transformation S=%s' % self.S.transformation)
+    self.T = AffineTransformation(self.n) # private key
+    self.logger.info('Transformation T=%s' % self.T.transformation)
+    
+    pprint(self.S.transformation)
+    pprint(self.trapdoor._P)
+    self._PS_product = self.substitute(self.trapdoor._P, self.S.transformation)
+    
+  def substitute(self, trapdoor, transformation):
+    result = {}
+    
+    for key_trapdoor in trapdoor: # loop throug all keys(y1, y2, ...yn) in trapdoor
+      if key_trapdoor != 'y1':
+        continue
+      
+      trapdoor_variables = trapdoor[key_trapdoor].split(MQ.EQUATION_SEPARATOR) # get variables that occur in equation at key
+      
+      for variable in trapdoor_variables: # for each variable in equation
+        print(variable)
+        if variable == '1':
+          self.insert_value(result, key_trapdoor, '1')
+        
+        elif MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
+          var = variable.split(MQ.OPERATOR_MUL)
+          
+          eq1 = transformation[var[0]].split(MQ.EQUATION_SEPARATOR)
+          eq2 = transformation[var[1]].split(MQ.EQUATION_SEPARATOR)
+          for eq1_var in eq1:
+            for eq2_var in eq2:
+              if eq1_var == '1':
+                if eq2_var == '1':
+                  self.insert_value(result, key_trapdoor, '1')
+                else:
+                  self.insert_value(result, key_trapdoor, eq2_var)
+              elif eq2_var == '1':
+                self.insert_value(result, key_trapdoor, eq1_var)
+              else:
+                self.insert_value_ordered(result, key_trapdoor, eq1_var, eq2_var)
+        
+        else:
+          for transformation_variable in transformation[variable].split(MQ.EQUATION_SEPARATOR):
+            self.insert_value(result, key_trapdoor, transformation_variable)
+    
+    pprint(result)
+  
+  def insert_value_ordered(self, dictionary, key, value1, value2):
+    if value1 == value2:
+      self.insert_value(dictionary, key, value1)
+    elif value1 < value2:
+      self.insert_value(dictionary, key, value1 + MQ.OPERATOR_MUL + value2)
+    else:
+      self.insert_value(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1)
+  
+  def insert_value(self, dictionary, key, value):
+    self.logger.debug("Inserting at key = %s, value = %s" % (key, value))
+    self.logger.debug("Dictionary fefore inserting\n%s", dictionary)
+    
+    self.logger.debug(dictionary)
+    if key in dictionary:
+      dictionary[key] ^= set([value]) # new set with elements in either s or t but not both
+    else:
+      dictionary[key] = set([value]) # new set with elements from both s and t
+    self.logger.debug(dictionary)
 
 
 class AffineTransformation:
   """
   
   """
-  def __init__(self, dimension, transformation_type):
+  def __init__(self, dimension):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of AffineTransformation')
     
     if dimension < 2:
-      raise ValueError("Dimension have to be greather then 2")
-    
-    u_choice = transformation_type.upper()
-    
-    if u_choice == 'S':
-      self.transformation_type = 'x'
-    elif u_choice == 'T':
-      self.transformation_type = 'y'
-    else:
-      raise ValueError("Transformation type should be 'S' or 'T'")
+      raise ValueError("Dimension have to be greather then 2")   
     
     self.dimension = dimension
     self.group = AffineGroup(dimension, GF(2))
     self.element = self.group.random_element()
-    self.matrix = self.element.A() # treba tuto premennu?
-    self.vector = self.element.b() # treba tuto premennu?
-    self.transformation = {}
-    
-    self.compute_transformation()
+    self.matrix = self.element.A()
+    self.vector = self.element.b()
+    self.logger.debug('created matrix=%s' % self.matrix)
+    self.logger.debug('created vector=%s' % self.vector)
+    self.transformation = self.compute_transformation()
     # inverza transformacia ~self.matrix alebo self.matrix.inverse()
     
   def compute_transformation(self):
-    for row in range(self.dimension):
-      equation = []
+    transformation = {}
+    
+    for row in range(self.dimension): # for each row in matrix
+      row_index = MQ.VARIABLE_X + str(row + 1) # create row index
       
-      for column in range(self.dimension):
-        if self.matrix[row][column] == 1:
-          equation.append(self.transformation_type + str(column + 1))
+      for column in range(self.dimension): # for each column in matrix
+        if self.matrix[row][column] == 1: # if matrix[row][column] == 1 add variable to equation
+          if row_index in transformation: # if key exists
+            transformation[row_index] += (MQ.EQUATION_SEPARATOR + MQ.VARIABLE_X + str(column + 1))
+          else:
+            transformation[row_index] = MQ.VARIABLE_X + str(column + 1)
+            #transformation[row_index] = '(' + MQ.VARIABLE_X + str(column + 1)
+      
+#      if not transformation[row_index].endswith(')'):
+#        transformation[row_index] += ')'
       
       if self.vector[row] == 1:
-        equation.append('1')
-      
-      self.transformation[self.transformation_type + str(row + 1)] = equation
+        if row_index in transformation: 
+          transformation[row_index] += (MQ.EQUATION_SEPARATOR + '1')
+          #transformation[row_index] += (MQ.EQUATION_SEPARATOR + '1)')
+        else:
+          transformation[row_index] = '1'
+          #transformation[row_index] = '(1)'
+    
+    return transformation
 
 
 
 # MQ trapdoors
 class UOV(object):
-  def __init__(self, MQ):
+  def __init__(self):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of UOV')
-    self.mq = MQ
     self.oil = []
     self.vinegar = []
     self._P = {}
-    self.create_trapdoor()
     
-  def create_trapdoor(self):
+  def create_trapdoor(self, MQ):
     self.logger.info('Creating trapdoor for UOV')
+    self.mq = MQ
     # create list of variables that may occure in result
-    variables = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
+    variables = [MQ.VARIABLE_X + str(i) for i in range(1, mq.n + 1)]
     shuffle(variables)
-
+    
     # divide them in oil and vinegar variables
-    middle = self.mq.n / 2
+    middle = mq.n / 2
     self.oil = variables[0:middle]
     # the more vinegar variables the harder is it to get original message
     self.vinegar = variables[middle:]
@@ -149,20 +221,25 @@ class UOV(object):
     
     self.logger.info('vinegar variables %s' % self.vinegar)
     self.logger.info('oil variables %s' % self.oil)
-    self.logger.info('product of variables %s' % variables)
+    self.logger.debug('product of variables %s' % variables)
     
-    c_min = self.mq.n - 1
-    c_max = self.mq.n + 1
+    c_min = mq.n - 1
+    c_max = mq.n + 1
     lottery = [i for i in range(len(variables))]
     i = 1
-    while i < self.mq.m + 1: # for each equation
-      self._P[MQ.VARIABLE_Y + str(i)] = set()     
+    while i < mq.m + 1: # for each equation
+      nonlinear = False # ensuring that equation contain nonlinear variable
       count = randint(c_min, c_max) # random count of variables in equation
       shuffle(lottery)
+
+      key = MQ.VARIABLE_Y + str(i)
+      self._P[key] = variables[lottery[0]]
       
-      nonlinear = False # ensuring that equation contain nonlinear variable
-      for j in range(count):
-        self._P[MQ.VARIABLE_Y + str(i)] |= set([variables[lottery[j]]])
+      if MQ.OPERATOR_MUL in variables[lottery[0]]:
+        nonlinear = True
+      
+      for j in range(1, count):
+        self._P[key] += MQ.EQUATION_SEPARATOR + variables[lottery[j]]
         
         # condition added because of saving string comparasion cost
         if nonlinear == False:
@@ -174,7 +251,7 @@ class UOV(object):
       
       i += 1
     
-    pprint(self._P)
+    self.logger.info('P\'=%s' % self._P)
 
 
 
@@ -189,15 +266,13 @@ class STS(object):
     variables_in_layer -- pocet premennych v danej vrstve | count of variables in each layer
   """
   
-  def __init__(self, MQ, layers_count, variables_in_layer, equations_in_layer):
+  def __init__(self, layers_count, variables_in_layer, equations_in_layer):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of STS')
-    self.mq = MQ
     self._P = {}
     self.layers_count = layers_count
     self.variables_in_layer = variables_in_layer
     self.equations_in_layer = equations_in_layer
-    self.create_trapdoor()
     
   def check_params(self): 
     """
@@ -211,8 +286,9 @@ class STS(object):
       self.logger.warning('Count of equations is not equal to layers_count')
       raise ValueError('Count of equations is not equal to layers_count')
   
-  def create_trapdoor(self):
+  def create_trapdoor(self, MQ):
     self.logger.info('creating trapdoor for STS')
+    self.mq = MQ
     
     product = self.create_product(self.mq.n)
     # ake premenne sa maju vyskytovat v rovniciach
@@ -463,20 +539,20 @@ class MIA(PolynomialBasedTrapdoor):
   """
   lambda_raised_to = MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER
   
-  def __init__(self, MQ):
+  def __init__(self):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of MIA')
-    self.mq = MQ
     self._P = {}
     self._lambda = None
-    self.create_trapdoor()
     
-  def create_trapdoor(self):
+  def create_trapdoor(self, MQ):
+    self.logger.info('creating trapdoor for MIA')
+    self.mq = MQ
     self._lambda = self.compute_lambda()
-    left_side = self.create_equation(self.mq.n)
-    right_side = self.create_equation(self.mq.n) # left_side.copy() # or dict(left_side)
     self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, self.mq.n)
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
+    left_side = self.create_equation(self.mq.n)
+    right_side = self.create_equation(self.mq.n) # left_side.copy() # or dict(left_side)
     
     self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
     # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
@@ -518,16 +594,15 @@ class HFE(PolynomialBasedTrapdoor):
   Hidden Field Equations
   """
   
-  def __init__(self, MQ):
+  def __init__(self):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of HFE')
-    self.mq = MQ
     self._P = {}
     self.d = 0
-    self.create_trapdoor()
 
-  def create_trapdoor(self):
+  def create_trapdoor(self, MQ):
     self.logger.info('Creating trapdoor for HFE')
+    self.mq = MQ
     self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, self.mq.n)
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
     base_polynomial = self.create_equation(self.mq.n)
@@ -752,9 +827,12 @@ def run_test(times = 1):
   print(average / times)
   
 if __name__ == "__main__":
-  mq = MQ(5, 4)
-  #run_test(30)
-  #uov = UOV(mq)
-  sts = STS(mq, 2, [2, 4], [2, 2])
-  #mia = MIA(mq)
-  #hfe = HFE(mq)
+  if 0 == 1:
+    run_test(50)
+    exit(0)
+  
+  uov = UOV()  
+  #sts = STS(2, [2, 4], [2, 2])
+  #mia = MIA()
+  #hfe = HFE()
+  mq = MQ(4, 4, uov)
