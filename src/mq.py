@@ -128,7 +128,7 @@ class MQ(object):
     self.logger.debug(dictionary)
 
 
-class AffineTransformation:
+class AffineTransformation(object):
   """
   
   """
@@ -138,7 +138,7 @@ class AffineTransformation:
     
     if dimension < 2:
       raise ValueError('Dimension have to be greather then 2')
-    if transf_type != 'S' or transf_type != 'T':
+    if not (transf_type == 'S' or transf_type == 'T'):
       raise ValueError('Transformation type shoudl be S or T')
     
     self.dimension = dimension
@@ -154,31 +154,27 @@ class AffineTransformation:
     
   def compute_transformation(self):
     transformation = {}
+    variable = ''
+    if self.transf_type == 'S':
+      variable = MQ.VARIABLE_X
+    else:
+      variable = MQ.VARIABLE_Y
     
     for row in range(self.dimension): # for each row in matrix
-      if self.transf_type == 'S':
-        row_index = MQ.VARIABLE_X + str(row + 1) # create row index
-      else:
-        row_index = MQ.VARIABLE_X + str(row + 1) # create row index
+      row_index = variable + str(row + 1) # create row index
       
       for column in range(self.dimension): # for each column in matrix
         if self.matrix[row][column] == 1: # if matrix[row][column] == 1 add variable to equation
           if row_index in transformation: # if key exists
-            transformation[row_index] += (MQ.EQUATION_SEPARATOR + MQ.VARIABLE_X + str(column + 1))
+            transformation[row_index] += (MQ.EQUATION_SEPARATOR + variable + str(column + 1))
           else:
-            transformation[row_index] = MQ.VARIABLE_X + str(column + 1)
-            #transformation[row_index] = '(' + MQ.VARIABLE_X + str(column + 1)
-      
-#      if not transformation[row_index].endswith(')'):
-#        transformation[row_index] += ')'
+            transformation[row_index] = variable + str(column + 1)
       
       if self.vector[row] == 1:
         if row_index in transformation: 
           transformation[row_index] += (MQ.EQUATION_SEPARATOR + '1')
-          #transformation[row_index] += (MQ.EQUATION_SEPARATOR + '1)')
         else:
           transformation[row_index] = '1'
-          #transformation[row_index] = '(1)'
     
     return transformation
 
