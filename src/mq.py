@@ -8,14 +8,15 @@
 
 #http://doc.sagemath.org/html/en/tutorial/tour_algebra.html
 #https://en.wikipedia.org/wiki/Remainder
-import logging
+from pprint import pprint
 from random import choice
 from random import randint
 from random import shuffle
-from pprint import pprint
 from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
+import logging
+import time
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
 
@@ -28,6 +29,7 @@ __status__ = "In progress"
 
 class MQ(object):
   """
+  sústave nelineárnych rovníc viacerých premenných nad konečným poľom
   Attributes:
     n         -- pocet premennych | count of variables
     m         -- pocet rovnic | count of equations
@@ -38,6 +40,7 @@ class MQ(object):
   OPERATOR_PLUS = '+'
   OPERATOR_MUL = '*'
   OPERATOR_POWER = '^'
+  EQUATION_SEPARATOR = ' + '
   X_RAISED_TO = VARIABLE_X + OPERATOR_POWER
   LAMBDA_RAISED_TO = VARIABLE_LAMBDA + OPERATOR_POWER
   
@@ -54,6 +57,10 @@ class MQ(object):
     self.product = self.create_product()
   
   def create_product(self):
+    """
+    Return product of x variables as list: 
+    x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
+    """
     product = [MQ.VARIABLE_X + '1']
     
     n = self.n + 1
@@ -72,10 +79,9 @@ class MQ(object):
     (MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER + exponent) i.e. L^2
     """
     X = {};
-    lambda_raised_to = MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER
     
     for exponent in range(self.n):
-      X[lambda_raised_to + str(exponent)] = set([MQ.VARIABLE_X + str(exponent + 1)])
+      X[MQ.LAMBDA_RAISED_TO + str(exponent)] = set([MQ.VARIABLE_X + str(exponent + 1)])
     
     return X
   
@@ -139,27 +145,77 @@ class AffineTransformation:
 
 # MQ trapdoors
 class UOV(object):
-  # 3. vygenerovat rovnice(2) pre UOV schemu
-  # 3a. dosadit rovnice(1) do rovnic(2) y_m
-  
-  def __init__(self, oil_vector, vinegar_vector = []):
+  def __init__(self, MQ):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of UOV')
-    self._P = []
-    self.oil = oil_vector
+    self.mq = MQ
+    self.oil = []
+    self.vinegar = []
+    self._P = {}
+    self.create_trapdoor()
     
-    if not vinegar_vector:
-      self.vinegar = []
-    else:
-      self.vinegar = vinegar_vector
-  
-  # skontrolovat ci su rovnice v UOV strukture V*V,V*O, ale nie O*O
-  def check_struct(self):
-    #super(UOV, slef).get_dimension
-    print(self._P)
-    
+  def create_trapdoor(self):
+    self.logger.info('Creating trapdoor for UOV')
+    # create list of variables that may occure in result
+    variables = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
+    shuffle(variables)
 
- 
+    # divide them in oil and vinegar variables
+    middle = self.mq.n / 2
+    self.oil = variables[0:middle]
+    self.vinegar = variables[middle:]
+    
+    vinegar_len = len(self.vinegar)
+    oil_len = len(self.oil)
+    variables.append('1')
+    
+    # add product of variables(vinegar*vinegar, vinegar*oil) that may be used in equation
+    for i in range(vinegar_len): # loop through all vinegar variables
+      for j in range(i + 1, vinegar_len):
+        # insert product of vinegar variables alphabetically ordered
+        if self.vinegar[i] < self.vinegar[j]:
+          variables.append(self.vinegar[i] + MQ.OPERATOR_MUL + self.vinegar[j])
+        else:
+          variables.append(self.vinegar[j] + MQ.OPERATOR_MUL + self.vinegar[i])
+
+      for j in range(oil_len): # loop through all oil variables
+        # insert product of oil and vinegar variables alphabetically ordered
+        if self.vinegar[i] < self.oil[j]:
+          variables.append(self.vinegar[i] + MQ.OPERATOR_MUL + self.oil[j])
+        else:
+          variables.append(self.oil[j] + MQ.OPERATOR_MUL + self.vinegar[i])
+    
+    self.logger.info('vinegar variables %s' % self.vinegar)
+    self.logger.info('oil variables %s' % self.oil)
+    self.logger.info('product of variables %s' % variables)
+    
+    c_min = self.mq.n - 1
+    c_max = self.mq.n + 1
+    lottery = [i for i in range(len(variables))]
+    i = 1
+    while i < self.mq.m + 1: # for each equation
+      self._P[MQ.VARIABLE_Y + str(i)] = set()     
+      count = randint(c_min, c_max) # random count of variables in equation
+      shuffle(lottery)
+      
+      nonlinear = False # ensuring that equation contain nonlinear variable
+      for j in range(count):
+        self._P[MQ.VARIABLE_Y + str(i)] |= set([variables[lottery[j]]])
+        
+        # condition added because of saving string comparasion cost
+        if nonlinear == False:
+          if MQ.OPERATOR_MUL in variables[lottery[j]]:
+            nonlinear = True
+      
+      if nonlinear == False:
+        i -= 1
+      
+      i += 1
+    
+    pprint(self._P)
+
+
+
 class STS(object):
   """
   Class for Stepwise Triangular Systems.
@@ -470,21 +526,17 @@ class HFE(PolynomialBasedTrapdoor):
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
     d_range = range(self.mq.n, self.mq.n + 3) # pick d that should be small ?!
     self.d = choice(d_range) # pick random value from range
-    self.d = 5
-    self.logger.debug('Ireducible polynomial %s, polynomial degree d = %s', self.irred_polynomial, self.d )
+    self.logger.debug('Ireducible polynomial %s, polynomial degree d = %s', self.irred_polynomial, self.d)
     
     HFE = self.create_hfe_polynomial(self.d)
-    HFE['x^1'] = set(['L^1'])
-    HFE['x^2'] = set(['L^2 + L^1 + 1'])
-    HFE['x^3'] = set(['L^3 + 1'])
-    HFE['x^4'] = set(['L^1'])
-    HFE['x^5'] = set(['1'])
-    pprint(HFE)
-    self.logger.debug('Created polynomial in HFE form %s' % HFE)
+    self.logger.info('Created polynomial in HFE form %s' % HFE)
     #--------------------------------------------------------------------------#
     # umocnenie a nasobenie rovnic
     subs = {}
     for key in HFE:
+      if key == MQ.X_RAISED_TO + '0':
+        continue
+      
       exponent = int(key[2:])
       
       if exponent > 1:
@@ -498,37 +550,32 @@ class HFE(PolynomialBasedTrapdoor):
           subs[key] = squared
       else:
         subs[key] = base_polynomial
-    self.logger.debug('Created polynomial in HFE form %s' % subs)
-    #--------------------------------------------------------------------------#
-    print('---')
-    pprint(subs)
-    for key_sub in subs: # for each x^0, x^1, x^2, ... x^d
-      if key_sub == 'x^1' or key_sub == 'x^0':
-        continue
-      
+    self.logger.info('Created polynomial in HFE form %s' % subs)
+    #--------------------------------------------------------------------------#   
+    for key_sub in subs: # for each x^1, x^2, ... x^d
       for key_lambda in subs[key_sub]: # for each L^0, L^1, L^2, ... L^(n - 1) in subs
         l_exponent = int(key_lambda[2:])
-        print('key_sub=%s, key_lambda=%s, exponent=%s' % (key_sub, key_lambda, l_exponent))
+        self.logger.debug('key_sub=%s, key_lambda=%s, l_exponent=%s' % (key_sub, key_lambda, l_exponent))
         
         for equation in HFE[key_sub]:
           multiples = str(equation).split(' + ')
           
-          
           for m in multiples:
             if len(m) < 3:
               m = self.edit_key(m)
-            print('4 hodnoty nasobenia %s, -> %s' % (multiples, m))
+            
+            self.logger.debug('4 hodnoty nasobenia %s, -> %s' % (multiples, m))
             
             m_exponent = int(m[2:])
             sum_exponent = m_exponent + l_exponent
             value = subs[key_sub][key_lambda].copy()
-            print('sucet exponentov=%s, vkladat sa bude=%s' % (sum_exponent, value))
+            self.logger.debug('sucet exponentov=%s, vkladat sa bude=%s' % (sum_exponent, value))
             
             if sum_exponent < self.mq.n:  
               key = MQ.LAMBDA_RAISED_TO + str(sum_exponent)  
               
               self.insert_value(self._P, key, value, False)
-              print(self._P)
+              self.logger.debug(self._P)
             else:
               remainders = self.irred_polynomial_rem[MQ.LAMBDA_RAISED_TO + str(sum_exponent)]
               remainders = str(remainders).split(' + ')
@@ -539,12 +586,19 @@ class HFE(PolynomialBasedTrapdoor):
                 # care - creating copy of value because it will be inserted more
                 # times and result would contain several references on it
                 self.insert_value(self._P, remainder, value.copy(), False)
-                print(self._P)
-        print('\t----next lambda key----')
-      print('----next subs----')
+                self.logger.debug(self._P)
+        self.logger.debug('\t----next lambda key----')
+      self.logger.debug('----next subs----')
     
-    #self._P[MQ.LAMBDA_RAISED_TO + '0'] ^= HFE[MQ.X_RAISED.TO + '0']
+    # insertin x^0 values
+    for values in HFE[MQ.X_RAISED_TO + '0']:
+      values_list = str(values).split(' + ')
+      
+      for key in values_list:
+        self.insert_value(self._P, key, '1', True)
+    
     pprint(self._P)
+    return self._P
           
   def create_hfe_polynomial(self, degree):
     # Let's create polynomial in HFE form
@@ -673,12 +727,25 @@ def create_polynomial(elements, degree):
 #1.HFE ak je d = 4 tak mam zabezpecit aby to vygenerovalo L^4
 #2.HFE co znamena nemalo byt nic velke? napisat moznost o ruletovom vybere
 #3.STS netreba teda aby v nasledujucej vrstve boli premenne z predchadzajucej vrstvy len nove premenne
+#4.pocet olejovych ma byt viac ako octovych alebo naopak? aky pomer? a kolko premennych ma byt v rovnici?
 #
 # compute_remainder: spravit v metode nech L a 1 vracia uz ako L^1 a L^0
 # subs: optimalizacia
-if __name__ == "__main__":
-  mq = MQ(4, 24)
+
+def run_test(times = 1):
+  average = 0
+  for test_runs in range(times):
+    start = time.time()
+    ###################
+    
+    ###################
+    average += (time.time() - start)
+  print(average / times)
   
+if __name__ == "__main__":
+  mq = MQ(4, 4)
+  #run_test(30)
+  uov = UOV(mq)
   #sts = STS(mq, 2, [2, 4], [2, 2])
   #mia = MIA(mq)
-  hfe = HFE(mq)
+  #hfe = HFE(mq)
