@@ -61,31 +61,22 @@ class MQ(object):
   def set_trapdoor(self, trapdoor):
     self.trapdoor = trapdoor
     self.trapdoor.create_trapdoor(self)
-    self.S = AffineTransformation(self.n) # private key
+    self.S = AffineTransformation(self.n, 'S') # private key
     self.logger.info('Transformation S=%s' % self.S.transformation)
-    self.T = AffineTransformation(self.n) # private key
+    self.T = AffineTransformation(self.n, 'T') # private key
     self.logger.info('Transformation T=%s' % self.T.transformation)
     
     pprint(self.S.transformation)
     pprint(self.trapdoor._P)
     self._PS_product = self.substitute(self.trapdoor._P, self.S.transformation)
-    
+    #self.T_PS_product = self.substitute(self._PS_product, self.T.transformation)
+  
   def substitute(self, trapdoor, transformation):
-    exit(0)
     result = {}
     
-    for key_trapdoor in trapdoor: # loop throug all keys(y1, y2, ...yn) in trapdoor
-      if key_trapdoor != 'y1':
-        continue
-      
-      trapdoor_variables = trapdoor[key_trapdoor].split(MQ.EQUATION_SEPARATOR) # get variables that occur in equation at key
-      
-      for variable in trapdoor_variables: # for each variable in equation
-        print(variable)
-        if variable == '1':
-          self.insert_value(result, key_trapdoor, '1')
-        
-        elif MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
+    for key in trapdoor: # loop throug all keys(y1, y2, ...yn) in trapdoor
+      for variable in trapdoor[key]: # for each variable in equation
+        if MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
           var = variable.split(MQ.OPERATOR_MUL)
           
           eq1 = transformation[var[0]].split(MQ.EQUATION_SEPARATOR)
@@ -94,17 +85,20 @@ class MQ(object):
             for eq2_var in eq2:
               if eq1_var == '1':
                 if eq2_var == '1':
-                  self.insert_value(result, key_trapdoor, '1')
+                  self.insert_value_dictionary(result, key, '1')
                 else:
-                  self.insert_value(result, key_trapdoor, eq2_var)
+                  self.insert_value_dictionary(result, key, eq2_var)
               elif eq2_var == '1':
-                self.insert_value(result, key_trapdoor, eq1_var)
+                self.insert_value_dictionary(result, key, eq1_var)
               else:
-                self.insert_value_ordered(result, key_trapdoor, eq1_var, eq2_var)
+                self.insert_value_ordered(result, key, eq1_var, eq2_var)
+        
+        elif variable == '1':
+          self.insert_value_dictionary(result, key, '1')
         
         else:
           for transformation_variable in transformation[variable].split(MQ.EQUATION_SEPARATOR):
-            self.insert_value(result, key_trapdoor, transformation_variable)
+            self.insert_value_dictionary(result, key, transformation_variable)
     
     pprint(result)
   
@@ -138,14 +132,17 @@ class AffineTransformation:
   """
   
   """
-  def __init__(self, dimension):
+  def __init__(self, dimension, transf_type):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of AffineTransformation')
     
     if dimension < 2:
-      raise ValueError("Dimension have to be greather then 2")   
+      raise ValueError('Dimension have to be greather then 2')
+    if transf_type != 'S' or transf_type != 'T':
+      raise ValueError('Transformation type shoudl be S or T')
     
     self.dimension = dimension
+    self.transf_type = transf_type
     self.group = AffineGroup(dimension, GF(2))
     self.element = self.group.random_element()
     self.matrix = self.element.A()
@@ -159,7 +156,10 @@ class AffineTransformation:
     transformation = {}
     
     for row in range(self.dimension): # for each row in matrix
-      row_index = MQ.VARIABLE_X + str(row + 1) # create row index
+      if self.transf_type == 'S':
+        row_index = MQ.VARIABLE_X + str(row + 1) # create row index
+      else:
+        row_index = MQ.VARIABLE_X + str(row + 1) # create row index
       
       for column in range(self.dimension): # for each column in matrix
         if self.matrix[row][column] == 1: # if matrix[row][column] == 1 add variable to equation
@@ -220,9 +220,9 @@ class UOV(MQ):
         # insert product of oil and vinegar variables arranged according to index
         self.mq.insert_value_list(variables, self.vinegar[i], self.oil[j])
     
-    self.logger.info('vinegar variables %s' % self.vinegar)
-    self.logger.info('oil variables %s' % self.oil)
-    self.logger.debug('product of variables %s' % variables)
+    self.logger.info('Vinegar variables %s' % self.vinegar)
+    self.logger.info('Oil variables %s' % self.oil)
+    self.logger.debug('Product of variables %s' % variables)
     
     c_min = mq.n - 1
     c_max = mq.n + 1
