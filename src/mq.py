@@ -30,6 +30,8 @@ __status__ = "In progress"
 class MQ(object):
   """
   sústave nelineárnych rovníc viacerých premenných nad konečným poľom
+  set of nonlinear(quadratics) polynomials over a finite field
+  
   Attributes:
     n         -- pocet premennych | count of variables
     m         -- pocet rovnic | count of equations
@@ -54,54 +56,13 @@ class MQ(object):
     
     self.n = n
     self.m = m
-    self.product = self.create_product()
-  
-  def create_product(self):
-    """
-    Return product of x variables as list: 
-    x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
-    """
-    product = [MQ.VARIABLE_X + '1']
-    
-    n = self.n + 1
-    for i in range(2, n):
-      product.append(MQ.VARIABLE_X + str(i))
-      
-      for j in range(1, i):
-        product.append(MQ.VARIABLE_X + str(j) + MQ.OPERATOR_MUL + MQ.VARIABLE_X + str(i))
-    
-    return product
-    
-  def create_equation(self):
-    """
-    Return equation in form x_1*Alpha^0 + x_2*Alpha^1 + ... + x_n*Alpha^(n-1),
-    transformed into dictionary where keys are Alphas as strings 
-    (MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER + exponent) i.e. L^2
-    """
-    X = {};
-    
-    for exponent in range(self.n):
-      X[MQ.LAMBDA_RAISED_TO + str(exponent)] = set([MQ.VARIABLE_X + str(exponent + 1)])
-    
-    return X
-  
-  def create_irreducible_polynomial(self, variable):
-    """
-    http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildIrred_list
-    Return the list of coefficients of the lexicographically smallest 
-    irreducible polynomial of degree n over the Gladis field of 2 elements.
-    """
-    return GF(2)[variable](GF2X_BuildIrred_list(self.n))
-  
-  def create_random_irreducible_polynomial(self, variable):
-    """
-    http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildRandomIrred_list
-    Return the list of coefficients of an irreducible polynomial of degree n 
-    of minimal weight over the Gladis field of 2 elements.
-    """
-    return GF(2)[variable](GF2X_BuildRandomIrred_list(self.n))
+
+
 
 class AffineTransformation:
+  """
+  
+  """
   def __init__(self, dimension, transformation_type):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of AffineTransformation')
@@ -163,6 +124,7 @@ class UOV(object):
     # divide them in oil and vinegar variables
     middle = self.mq.n / 2
     self.oil = variables[0:middle]
+    # the more vinegar variables the harder is it to get original message
     self.vinegar = variables[middle:]
     
     vinegar_len = len(self.vinegar)
@@ -172,14 +134,14 @@ class UOV(object):
     # add product of variables(vinegar*vinegar, vinegar*oil) that may be used in equation
     for i in range(vinegar_len): # loop through all vinegar variables
       for j in range(i + 1, vinegar_len):
-        # insert product of vinegar variables alphabetically ordered
+        # insert product of vinegar variables arranged according to index
         if self.vinegar[i] < self.vinegar[j]:
           variables.append(self.vinegar[i] + MQ.OPERATOR_MUL + self.vinegar[j])
         else:
           variables.append(self.vinegar[j] + MQ.OPERATOR_MUL + self.vinegar[i])
 
       for j in range(oil_len): # loop through all oil variables
-        # insert product of oil and vinegar variables alphabetically ordered
+        # insert product of oil and vinegar variables arranged according to index
         if self.vinegar[i] < self.oil[j]:
           variables.append(self.vinegar[i] + MQ.OPERATOR_MUL + self.oil[j])
         else:
@@ -252,6 +214,7 @@ class STS(object):
   def create_trapdoor(self):
     self.logger.info('creating trapdoor for STS')
     
+    product = self.create_product(self.mq.n)
     # ake premenne sa maju vyskytovat v rovniciach
     should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
     
@@ -265,7 +228,7 @@ class STS(object):
       if self.equations_in_layer[layer] > triangle_number:
         raise ValueError('Count of equations in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(triangle_number))
       
-      sub_product = self.mq.product[:triangle_number]
+      sub_product = product[:triangle_number]
       shuffle(sub_product)
       
       print("Layer: " + str(layer + 1))
@@ -314,9 +277,55 @@ class STS(object):
 #    res = solve([eq1, eq2], variables)
 #    print(res)
 
+  def create_product(self, n):
+    """
+    Return product of x variables as list: 
+    x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
+    """
+    product = [MQ.VARIABLE_X + '1']
+    
+    n += 1
+    for i in range(2, n):
+      variable = MQ.VARIABLE_X + str(i)
+      product.append(variable)
+      
+      for j in range(1, i):
+        product.append(MQ.VARIABLE_X + str(j) + MQ.OPERATOR_MUL + variable)
+    
+    return product
+
 
 
 class PolynomialBasedTrapdoor(MQ):
+  def create_irreducible_polynomial(self, variable, n):
+    """
+    http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildIrred_list
+    Return the list of coefficients of the lexicographically smallest 
+    irreducible polynomial of degree n over the Gladis field of 2 elements.
+    """
+    return GF(2)[variable](GF2X_BuildIrred_list(n))
+  
+  def create_random_irreducible_polynomial(self, variable, n):
+    """
+    http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildRandomIrred_list
+    Return the list of coefficients of an irreducible polynomial of degree n 
+    of minimal weight over the Gladis field of 2 elements.
+    """
+    return GF(2)[variable](GF2X_BuildRandomIrred_list(n))
+  
+  def create_equation(self, n):
+    """
+    Return equation in form x_1*Alpha^0 + x_2*Alpha^1 + ... + x_n*Alpha^(n-1),
+    transformed into dictionary where keys are Alphas as strings 
+    (MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER + exponent) i.e. L^2
+    """
+    X = {};
+    
+    for exponent in range(n):
+      X[MQ.LAMBDA_RAISED_TO + str(exponent)] = set([MQ.VARIABLE_X + str(exponent + 1)])
+    
+    return X
+  
   def compute_remainder(self, irreducible_polynomial, key):
     """
     Return dictionary with remainders after raising irreducible polynomial 
@@ -464,9 +473,9 @@ class MIA(PolynomialBasedTrapdoor):
     
   def create_trapdoor(self):
     self._lambda = self.compute_lambda()
-    left_side = self.mq.create_equation()
-    right_side = self.mq.create_equation()#left_side.copy() # or dict(left_side)
-    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.VARIABLE_X)
+    left_side = self.create_equation(self.mq.n)
+    right_side = self.create_equation(self.mq.n) # left_side.copy() # or dict(left_side)
+    self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, self.mq.n)
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
     
     self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
@@ -519,9 +528,9 @@ class HFE(PolynomialBasedTrapdoor):
 
   def create_trapdoor(self):
     self.logger.info('Creating trapdoor for HFE')
-    self.irred_polynomial = self.mq.create_irreducible_polynomial(MQ.VARIABLE_X)
+    self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, self.mq.n)
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
-    base_polynomial = self.mq.create_equation()
+    base_polynomial = self.create_equation(self.mq.n)
     
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
     d_range = range(self.mq.n, self.mq.n + 3) # pick d that should be small ?!
@@ -550,7 +559,7 @@ class HFE(PolynomialBasedTrapdoor):
           subs[key] = squared
       else:
         subs[key] = base_polynomial
-    self.logger.info('Created polynomial in HFE form %s' % subs)
+    self.logger.info('Raised HFE polynomial %s' % subs)
     #--------------------------------------------------------------------------#   
     for key_sub in subs: # for each x^1, x^2, ... x^d
       for key_lambda in subs[key_sub]: # for each L^0, L^1, L^2, ... L^(n - 1) in subs
@@ -743,9 +752,9 @@ def run_test(times = 1):
   print(average / times)
   
 if __name__ == "__main__":
-  mq = MQ(4, 4)
+  mq = MQ(5, 4)
   #run_test(30)
-  uov = UOV(mq)
-  #sts = STS(mq, 2, [2, 4], [2, 2])
+  #uov = UOV(mq)
+  sts = STS(mq, 2, [2, 4], [2, 2])
   #mia = MIA(mq)
   #hfe = HFE(mq)
