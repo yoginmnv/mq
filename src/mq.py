@@ -42,7 +42,7 @@ class MQ(object):
   OPERATOR_PLUS = '+'
   OPERATOR_MUL = '*'
   OPERATOR_POWER = '^'
-  EQUATION_SEPARATOR = ' + '
+  VARIABLE_SEPARATOR = ' + '
   X_RAISED_TO = VARIABLE_X + OPERATOR_POWER
   LAMBDA_RAISED_TO = VARIABLE_LAMBDA + OPERATOR_POWER
   
@@ -74,8 +74,8 @@ class MQ(object):
         if MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
           var = variable.split(MQ.OPERATOR_MUL)
           
-          eq1 = transformation_s[var[0]].split(MQ.EQUATION_SEPARATOR)
-          eq2 = transformation_s[var[1]].split(MQ.EQUATION_SEPARATOR)
+          eq1 = transformation_s[var[0]].split(MQ.VARIABLE_SEPARATOR)
+          eq2 = transformation_s[var[1]].split(MQ.VARIABLE_SEPARATOR)
           for eq1_var in eq1:
             for eq2_var in eq2:
               if eq1_var == '1':
@@ -92,7 +92,7 @@ class MQ(object):
           self.insert_value_dictionary(result, key, '1', True)
         
         else:
-          for transformation_variable in transformation_s[variable].split(MQ.EQUATION_SEPARATOR):
+          for transformation_variable in transformation_s[variable].split(MQ.VARIABLE_SEPARATOR):
             self.insert_value_dictionary(result, key, transformation_variable, True)
     
     self.logger.info('_P o S=%s' % result)
@@ -102,7 +102,7 @@ class MQ(object):
     result = {}
     
     for key in transformation_t:
-      variables = transformation_t[key].split(MQ.EQUATION_SEPARATOR)
+      variables = transformation_t[key].split(MQ.VARIABLE_SEPARATOR)
       
       for variable in variables:
         if variable == '1':
@@ -114,6 +114,9 @@ class MQ(object):
     return result
   
   def insert_value_list(self, array, value1, value2):
+    """
+    Appends product of values to list arranged according to index: val1_index, val2_index
+    """
     if value1 < value2:
       array.append(value1 + MQ.OPERATOR_MUL + value2)
     else:
@@ -127,12 +130,9 @@ class MQ(object):
     else:
       self.insert_value_dictionary(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1, as_set)
   
-  def insert_value_dictionary(self, dictionary, key, value, as_set):
-#    if len(key) < 3:
-#      key = self.edit_key(key)
-    
-    self.logger.debug("Inserting at key = %s, value = %s" % (key, value))
-    self.logger.debug("Dictionary before inserting\n%s", dictionary)
+  def insert_value_dictionary(self, dictionary, key, value, as_set):   
+    self.logger.debug('Inserting at key = %s, value = %s' % (key, value))
+    self.logger.debug('Dictionary before inserting\n%s' % dictionary)
     
     if key in dictionary:
       if as_set == True:
@@ -145,7 +145,7 @@ class MQ(object):
       else:
         dictionary[key] = value # new set with elements from both s and t
     
-    self.logger.debug(dictionary)
+    self.logger.debug('Dictionary after inserting\n%s' % dictionary)
 
 
 
@@ -171,7 +171,7 @@ class AffineTransformation(object):
     self.logger.debug('created matrix=%s' % self.matrix)
     self.logger.debug('created vector=%s' % self.vector)
     self.transformation = self.compute_transformation()
-    # inverza transformacia ~self.matrix alebo self.matrix.inverse()
+    # inverzna transformacia ~self.matrix alebo self.matrix.inverse()
     
   def compute_transformation(self):
     transformation = {}
@@ -187,13 +187,13 @@ class AffineTransformation(object):
       for column in range(self.dimension): # for each column in matrix
         if self.matrix[row][column] == 1: # if matrix[row][column] == 1 add variable to equation
           if row_index in transformation: # if key exists
-            transformation[row_index] += (MQ.EQUATION_SEPARATOR + variable + str(column + 1))
+            transformation[row_index] += (MQ.VARIABLE_SEPARATOR + variable + str(column + 1))
           else:
             transformation[row_index] = variable + str(column + 1)
       
       if self.vector[row] == 1:
         if row_index in transformation: 
-          transformation[row_index] += (MQ.EQUATION_SEPARATOR + '1')
+          transformation[row_index] += (MQ.VARIABLE_SEPARATOR + '1')
         else:
           transformation[row_index] = '1'
     
@@ -227,10 +227,14 @@ class UOV(MQ):
     # the more vinegar variables the harder is it to get original message
     self.vinegar = variables[middle:]
     
-    vinegar_len = len(self.vinegar)
-    oil_len = len(self.oil)
-    variables.append('1')
+    # get lenght of list for for loops
+    oil_len = middle
+    if mq.n & 1 == 0:
+      vinegar_len = middle
+    else:
+      vinegar_len = middle + 1
     
+    variables.append('1')
     # add product of variables(vinegar*vinegar, vinegar*oil) that may be occure in equation
     for i in range(vinegar_len): # loop through all vinegar variables
       for j in range(i + 1, vinegar_len):
@@ -300,31 +304,30 @@ class STS(MQ):
       raise ValueError('Count of layers(' + str(self.layers_count) + ') is more than count of equation(' + str(self.mq.n) + ')')
     
     if sum(self.equations_in_layer) != self.layers_count:
-      self.logger.warning('Count of equations is not equal to layers_count')
       raise ValueError('Count of equations is not equal to layers_count')
   
-  def create_trapdoor(self, MQ):
+  def create_trapdoor(self, mq):
     self.logger.info('creating trapdoor for STS')
-    self.mq = MQ
+    self.mq = mq
     
     product = self.create_product(self.mq.n)
     # ake premenne sa maju vyskytovat v rovniciach
     should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
     
-    for layer in range(self.layers_count):
-      if self.variables_in_layer[layer] > self.mq.n:
+    for layer in range(self.layers_count): # for each layer
+      if self.variables_in_layer[layer] > self.mq.n: # check if count of variables is not higher then total count of variables
         raise ValueError('Count of variables in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(self.mq.n))
       
       variables_count = self.variables_in_layer[layer]
-      triangle_number = variables_count * (variables_count + 1) / 2
+      triangle_number = variables_count * (variables_count + 1) / 2 # compute how many variables can be picked from list product for current count variables in layer
       
-      if self.equations_in_layer[layer] > triangle_number:
+      if self.equations_in_layer[layer] > triangle_number: # check if is possible to generate so much equations
         raise ValueError('Count of equations in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(triangle_number))
       
       sub_product = product[:triangle_number]
       shuffle(sub_product)
       
-      print("Layer: " + str(layer + 1))
+      self.logger.debug("Layer: " + str(layer + 1))
       i = 0
       # pre pocet rovnic vo vrstve
       while i < self.equations_in_layer[layer]:
@@ -336,7 +339,7 @@ class STS(MQ):
         # skontrolujem ci vytvorena rovnica obsahuje vsetky premenne
         contain_vars = set(should_contains[:variables_count])
         for variables in self._P[actual_equation]:
-          contain_vars -= set(variables.split('*'))
+          contain_vars -= set(variables.split(MQ.OPERATOR_MUL))
           if len(contain_vars) == 0:
             break
         
@@ -348,7 +351,7 @@ class STS(MQ):
           triangle_number_max -= 1
           self._P[actual_equation] |= set([self.mq.product[randint(triangle_number_min, triangle_number_max)]])
         
-        print("  Equation " + str(i + 1) + ": " + str(self._P[actual_equation]))
+        self.logger.debug("  Equation " + str(i + 1) + ": " + str(self._P[actual_equation]))
         
         # kontrolujem ci sa predchadzajuca rovnica nezhoduje s aktualnou
         if i > 0:
@@ -357,18 +360,14 @@ class STS(MQ):
           for j in range(i):
             if actual_eq_len == len(self._P[MQ.VARIABLE_Y + str(j)]):
               if self._P[actual_equation] == self._P[MQ.VARIABLE_Y + str(j)]:
-                print("Equation " + str(i + 1) + " equals with equation " + str(j + 1) + " -> creating new equation")
+                self.logger.debug("Equation " + str(i + 1) + " equals with equation " + str(j + 1) + " -> creating new equation")
                 i -= 1
         
         i += 1
         shuffle(sub_product)
-    #print(self._P)
     
-#    variables = var(variables_y)
-#    eq1 = x1*x2 + x1 == 1
-#    eq2 = x1*x2 + x2 == 0
-#    res = solve([eq1, eq2], variables)
-#    print(res)
+    self.logger.info('_P=%s' % self._P)
+    return self._P
 
   def create_product(self, n):
     """
@@ -442,9 +441,7 @@ class PolynomialBasedTrapdoor(MQ):
     """
     Raises the polynomial with exponent 2 n-times; polynomial^2^times
     """
-    lambda_raised_to = MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER
-    
-    # create copy of dictionary
+    # create copy of dictionary, as we don't want to change it
     polynomial_copy = {}
     for key in polynomial:
       polynomial_copy[key] = polynomial[key].copy()
@@ -457,13 +454,16 @@ class PolynomialBasedTrapdoor(MQ):
         exponent = int(key[2:]) * 2
         
         if exponent < self.mq.n:
-          squared_polynomial[lambda_raised_to + str(exponent)] = polynomial_copy[key]
+          squared_polynomial[MQ.LAMBDA_RAISED_TO + str(exponent)] = polynomial_copy[key]
         else:
-          remand_keys = str(remainders[lambda_raised_to + str(exponent)]).split(' + ')
+          remand_keys = str(remainders[MQ.LAMBDA_RAISED_TO + str(exponent)]).split(MQ.VARIABLE_SEPARATOR)
           
           for remand_key in remand_keys: # loop through all keys in array
-            self.insert_value(squared_polynomial, remand_key, polynomial_copy[key], False)
-          
+            if len(remand_key) < 3:
+              remand_key = self.edit_key(remand_key)
+            
+            self.insert_value_dictionary(squared_polynomial, remand_key, polynomial_copy[key], False)
+      
       polynomial_copy = squared_polynomial
     
     return polynomial_copy
@@ -483,17 +483,17 @@ class PolynomialBasedTrapdoor(MQ):
           for right_value in right_side[right_key]:
             self.logger.debug("Right key and value %s, %s", right_key, right_value)
             exponent_sum = left_key_exponent + right_key_exponent
-            key = MIA.lambda_raised_to + str(exponent_sum)
+            key = MQ.LAMBDA_RAISED_TO + str(exponent_sum)
             
             if exponent_sum < self.mq.n:
               self.insert_value_ordered(result, key, left_value, right_value, True)
-              self.logger.debug("After inserting\n%s", result)
             else:
-              ired_keys = str(self.irred_polynomial_rem[key]).split(' + ')
+              ired_keys = str(self.irred_polynomial_rem[key]).split(MQ.VARIABLE_SEPARATOR)
               
               for ired_key in ired_keys:
+                if len(ired_key) < 3:
+                  ired_key = self.edit_key(ired_key)
                 self.insert_value_ordered(result, ired_key, left_value, right_value, True)
-                self.logger.debug("After inserting\n%s", result)
               
           self.logger.debug("\n-------------")
       self.logger.debug('\n--------------------------')
@@ -523,35 +523,39 @@ class MIA(PolynomialBasedTrapdoor):
   7. roznasobit zatvorky
   8. vyjmut premenne pre dane lambdy
   """
-  lambda_raised_to = MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER
   
   def __init__(self):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of MIA')
     self._P = {}
-    self._lambda = None
     
-  def create_trapdoor(self, MQ):
+  def create_trapdoor(self, mq):
     self.logger.info('creating trapdoor for MIA')
-    self.mq = MQ
+    self.mq = mq
     self._lambda = self.compute_lambda()
-    self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, self.mq.n)
+    self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
-    left_side = self.create_equation(self.mq.n)
-    right_side = self.create_equation(self.mq.n) # left_side.copy() # or dict(left_side)
+    base_polynomial = self.create_equation(mq.n)
     
-    self.logger.info('Created irreducible polynomial = %s', str(self.irred_polynomial))
-    # the equation is P`(X) = X ^ (2 ^ labda + 1) we break this into two parts
+    self.logger.info('Created irreducible polynomial=%s' % self.irred_polynomial)
+    # the equation is P'(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
     # first part: a = left_side ^ (2 ^ lambda), will be calculated using the Frobenius automorphisms
-    left_side = self.square_polynomial(left_side, self._lambda, self.irred_polynomial_rem)
-    self.logger.info('For lambda = %s computed left side\n%s', self._lambda, left_side)
-    self.logger.info('Multipling with right side\n%s\n-------------------------', right_side)
+    left_side = self.square_polynomial(base_polynomial, self._lambda, self.irred_polynomial_rem)
+    self.logger.info('For lambda=%s computed left side\n%s' % (self._lambda, left_side))
+    self.logger.info('Multipling left side with right side\n%s' % base_polynomial)
     
-    # second part: P`(x) = a * X ^ 1
-    self._P = self.multiply_polynomials(left_side, right_side, self.irred_polynomial_rem)
-    self.logger.info('Result')
-    pprint(self._P)
+    # second part: P'(x) = a * X ^ 1
+    self._P = self.multiply_polynomials(left_side, base_polynomial, self.irred_polynomial_rem)
+    
+    # just renaming keys from L^x to yx
+    result = {}
+    for i in range(self.mq.n):
+      result[MQ.VARIABLE_Y + str(i + 1)] = self._P[MQ.LAMBDA_RAISED_TO + str(i)]
+    
+    self._P = result
+    self.logger.info('_P=%s' % self._P)
+    return self._P
     
   def compute_lambda(self):
     """
@@ -584,22 +588,21 @@ class HFE(PolynomialBasedTrapdoor):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of HFE')
     self._P = {}
-    self.d = 0
-
-  def create_trapdoor(self, MQ):
+  
+  def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for HFE')
-    self.mq = MQ
-    self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, self.mq.n)
+    self.mq = mq
+    self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
-    base_polynomial = self.create_equation(self.mq.n)
+    base_polynomial = self.create_equation(mq.n)
     
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
-    d_range = range(self.mq.n, self.mq.n + 3) # pick d that should be small ?!
+    d_range = range(mq.n, mq.n + 3) # pick d that should be small ?!
     self.d = choice(d_range) # pick random value from range
-    self.logger.debug('Ireducible polynomial %s, polynomial degree d = %s', self.irred_polynomial, self.d)
+    self.logger.debug('Ireducible polynomial=%s, polynomial degree d=%s' % (self.irred_polynomial, self.d))
     
     HFE = self.create_hfe_polynomial(self.d)
-    self.logger.info('Created polynomial in HFE form %s' % HFE)
+    self.logger.info('Created polynomial in HFE form\n%s' % HFE)
     #--------------------------------------------------------------------------#
     # umocnenie a nasobenie rovnic
     subs = {}
@@ -620,7 +623,7 @@ class HFE(PolynomialBasedTrapdoor):
           subs[key] = squared
       else:
         subs[key] = base_polynomial
-    self.logger.info('Raised HFE polynomial %s' % subs)
+    self.logger.info('Raised HFE polynomial\n%s' % subs)
     #--------------------------------------------------------------------------#   
     for key_sub in subs: # for each x^1, x^2, ... x^d
       for key_lambda in subs[key_sub]: # for each L^0, L^1, L^2, ... L^(n - 1) in subs
@@ -628,7 +631,7 @@ class HFE(PolynomialBasedTrapdoor):
         self.logger.debug('key_sub=%s, key_lambda=%s, l_exponent=%s' % (key_sub, key_lambda, l_exponent))
         
         for equation in HFE[key_sub]:
-          multiples = str(equation).split(' + ')
+          multiples = str(equation).split(MQ.VARIABLE_SEPARATOR)
           
           for m in multiples:
             if len(m) < 3:
@@ -644,30 +647,34 @@ class HFE(PolynomialBasedTrapdoor):
             if sum_exponent < self.mq.n:  
               key = MQ.LAMBDA_RAISED_TO + str(sum_exponent)  
               
-              self.insert_value(self._P, key, value, False)
-              self.logger.debug(self._P)
+              self.insert_value_dictionary(self._P, key, value, False)
             else:
               remainders = self.irred_polynomial_rem[MQ.LAMBDA_RAISED_TO + str(sum_exponent)]
-              remainders = str(remainders).split(' + ')
+              remainders = str(remainders).split(MQ.VARIABLE_SEPARATOR)
               
               for remainder in remainders:
                 if len(remainder) < 3:
                   remainder = self.edit_key(remainder)
                 # care - creating copy of value because it will be inserted more
                 # times and result would contain several references on it
-                self.insert_value(self._P, remainder, value.copy(), False)
-                self.logger.debug(self._P)
+                self.insert_value_dictionary(self._P, remainder, value.copy(), False)
         self.logger.debug('\t----next lambda key----')
       self.logger.debug('----next subs----')
     
     # insertin x^0 values
     for values in HFE[MQ.X_RAISED_TO + '0']:
-      values_list = str(values).split(' + ')
+      values_list = str(values).split(MQ.VARIABLE_SEPARATOR)
       
       for key in values_list:
-        self.insert_value(self._P, key, '1', True)
+        self.insert_value_dictionary(self._P, key, '1', True)
     
-    pprint(self._P)
+    # just renaming keys from L^x to yx
+    result = {}
+    for i in range(mq.n):
+      result[MQ.VARIABLE_Y + str(i + 1)] = self._P[MQ.LAMBDA_RAISED_TO + str(i)]
+    
+    self._P = result
+    self.logger.info('_P=%s' % self._P)
     return self._P
           
   def create_hfe_polynomial(self, degree):
@@ -817,8 +824,10 @@ if __name__ == "__main__":
     run_test(50)
     exit(0)
   
-  uov = UOV()  
-  #sts = STS(2, [2, 4], [2, 2])
-  #mia = MIA()
-  #hfe = HFE()
-  mq = MQ(4, 4, uov)
+  trapdoor = {
+    'uov': UOV(),
+    'sts': STS(2, [2, 4], [2, 4]),
+    'mia': MIA(),
+    'hfe': HFE()
+  }
+  mq = MQ(5, 4, trapdoor['hfe'])
