@@ -90,3 +90,5 @@ ENV/
 
 # Netbeans files
 nbproject/
+src/nb-configuration.xml
+src/setup.py
