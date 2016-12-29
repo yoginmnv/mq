@@ -17,7 +17,7 @@ import logging
 import time
 
 # levels = NOTSET INFO DEBUG WARNING
-logging.basicConfig(level=logging.DEBUG, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
 
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
@@ -61,8 +61,6 @@ class MQ(object):
     self.logger.debug('Enter ------------------------------')
     self.trapdoor = trapdoor
     self.trapdoor.create_trapdoor(self) # create private key
-    pprint(self.trapdoor._P)
-    exit(0)
     self.S = AffineTransformation(self.n, 'S') # private key
     
     if isinstance(trapdoor, UOV) or isinstance(trapdoor, STS):
@@ -318,6 +316,13 @@ class STS(MQ):
     layers_count -- pocet vrstiev | total count of layers
     equations_in_layer -- pocet rovnic v danej vrstve | count of equations in each layer
     variables_in_layer -- pocet premennych v danej vrstve | count of variables in each layer
+    
+    example: n = 8, m = 8
+    2 layers, [4, 4] variables, [4, 4] equation
+    2 layers, [2, 6] variables, [4, 4] equation
+    
+    4 layers, [2, 2, 2, 2] variables, [2, 4, 6, 8] equation
+    4 layers, [1, 2, 2, 3] variables, [1, 2, 2, 3] equation
   """
   
   def __init__(self, layers_count, variables_in_layer, equations_in_layer):
@@ -327,46 +332,38 @@ class STS(MQ):
     self.layers_count = layers_count
     self.variables_in_layer = variables_in_layer
     self.equations_in_layer = equations_in_layer
-    
-  def check_params(self): 
-    """
-    metoda skontroluje ci pocet rovnice v jednotlivych vrstvach sa rovna 
-    celkovemu poctu rovnic layers_count
-    """
-    if self.layers_count > self.mq.n:
-      raise ValueError('Count of layers(' + str(self.layers_count) + ') is more than count of equation(' + str(self.mq.n) + ')')
-    
-    if sum(self.equations_in_layer) != self.layers_count:
-      raise ValueError('Count of equations is not equal to layers_count')
   
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for STS')
     self.mq = mq
+    self.check_params()
     
-    product = self.create_product(self.mq.n) # x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ...
+    product = self.create_product(self.mq.n) # x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
+    self.logger.debug('Product of variables=\n%s' % product)
     # ake premenne sa maju vyskytovat v rovniciach
     should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
     
+    variables_count = 0
+    equation_index = 1 # store the result keys from y1(y2, y3, ..., yn) not from y0. Otherwise change for loop: for j in range(1, i + 1): # loop through previous equations
+    equations_sum = 0
     for layer in range(self.layers_count): # for each layer
-      if self.variables_in_layer[layer] > self.mq.n: # check if count of variables is not higher then total count of variables
-        raise ValueError('Count of variables in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(self.mq.n))
-      
-      variables_count = self.variables_in_layer[layer]
+      variables_count += self.variables_in_layer[layer]
       triangle_number = variables_count * (variables_count + 1) / 2 # compute how many variables can be picked from list product for current count variables in layer
-      
-      if self.equations_in_layer[layer] > triangle_number: # check if is possible to generate so much equations
-        raise ValueError('Count of equations in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(triangle_number))
+      self.logger.debug('In layer=%s, count of variables=%s(triangle number=%s), count of equations=%s' % (layer + 1, variables_count, triangle_number, self.equations_in_layer[layer]))
+ 
+      # check later this condition
+#      if self.equations_in_layer[layer] > triangle_number: # check if is possible to generate so much equations
+#        raise ValueError('Count of equations in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(triangle_number))
       
       sub_product = product[:triangle_number]
+      self.logger.debug('Pick from=%s' % sub_product)
       shuffle(sub_product)
       
-      self.logger.debug("Layer: " + str(layer + 1))
       i = 0
-      # pre pocet rovnic vo vrstve
-      while i < self.equations_in_layer[layer]:
-        actual_equation = MQ.VARIABLE_Y + str(i)
-        
-        rand = randint(self.variables_in_layer[layer], triangle_number)
+      equations_sum += self.equations_in_layer[layer]
+      while i < self.equations_in_layer[layer]: # for count of equations in layer
+        actual_equation = MQ.VARIABLE_Y + str(equation_index) # create key for dictionary
+        rand = randint(equations_sum, triangle_number) # pick random number from range
         self._P[actual_equation] = set(sub_product[:rand])
         
         # skontrolujem ci vytvorena rovnica obsahuje vsetky premenne
@@ -378,29 +375,44 @@ class STS(MQ):
         
         # ak zostali nejake premenne tak ich treba pridat do rovnice
         for remaining_vars in contain_vars:
+          self.logger.debug('Adding %s to %s' % (remaining_vars, actual_equation))
           num = int(remaining_vars[1:])
-          triangle_number_min = (num - 1) * num / 2
-          triangle_number_max = num * (num + 1) / 2
-          triangle_number_max -= 1
-          self._P[actual_equation] |= set([self.mq.product[randint(triangle_number_min, triangle_number_max)]])
+          triangle_number_min =  (num - 1) * num / 2
+          triangle_number_max = ((num + 1) * num / 2) - 1
+          self._P[actual_equation] |= set([product[randint(triangle_number_min, triangle_number_max)]])
         
-        self.logger.debug("  Equation " + str(i + 1) + ": " + str(self._P[actual_equation]))
+        self.logger.debug('-> Equation=%s, picked values[%s]=\n%s' % (i + 1, actual_equation, self._P[actual_equation]))
         
-        # kontrolujem ci sa predchadzajuca rovnica nezhoduje s aktualnou
-        if i > 0:
-          actual_eq_len = len(self._P[actual_equation])
+        if i > 0: # checking whether the previous equation doesn't match with the current
+          actual_eq_len = len(self._P[actual_equation]) 
           
-          for j in range(i):
+          for j in range(1, i + 1): # loop through previous equations
             if actual_eq_len == len(self._P[MQ.VARIABLE_Y + str(j)]):
               if self._P[actual_equation] == self._P[MQ.VARIABLE_Y + str(j)]:
-                self.logger.debug("Equation " + str(i + 1) + " equals with equation " + str(j + 1) + " -> creating new equation")
+                self.logger.debug(" x Equation " + str(i + 1) + " equals with equation " + str(j + 1) + " -> creating new equation")
                 i -= 1
+                equation_index -= 1
         
         i += 1
+        equation_index += 1
         shuffle(sub_product)
     
     self.logger.info('_P=%s' % self._P)
     return self._P
+  
+  def check_params(self): 
+    """
+    The method checks whether the specified parameters are correct
+    """
+    if self.layers_count > self.mq.m:
+      raise ValueError('Count of layers(' + str(self.layers_count) + ') is more than count of equation(' + str(self.mq.m) + ')')
+    
+    for layer in range(self.layers_count): # for each layer
+      if self.variables_in_layer[layer] > self.mq.n: # check if count of variables in actual layer is not higher then n
+        raise ValueError('Count of variables in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(self.mq.n))
+      
+      if self.equations_in_layer[layer] > self.mq.m:  # check if count of equations in actual layer is not higher then m
+        raise ValueError('Count of equations in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(self.mq.m))
 
   def create_product(self, n):
     """
@@ -858,10 +870,11 @@ def create_polynomial(elements, degree):
 #1.HFE ak je d = 4 tak mam zabezpecit aby to vygenerovalo L^4
 #2.HFE co znamena nemalo byt nic velke? napisat moznost o ruletovom vybere
 #3.STS netreba teda aby v nasledujucej vrstve boli premenne z predchadzajucej vrstvy len nove premenne
-#4.pocet olejovych ma byt viac ako octovych alebo naopak? aky pomer? a kolko premennych ma byt v rovnici?
+#4.STS 'Nech v prvej vrstve sú 2 premenné x_1 , x_2', moze byt samostatna rovnica len v tvare x_1*x2=y, alebo tam maju byt vzdy dva cleny ako napr x_1 + x_2 
+#5.UOV pocet olejovych ma byt viac ako octovych alebo naopak? aky pomer? a kolko premennych ma byt v rovnici?
 #
 # compute_remainder: spravit v metode nech L a 1 vracia uz ako L^1 a L^0
-# subs: optimalizacia
+# HFE subs: optimalizacia
 
 def run_test(times = 1):
   average = 0
@@ -872,16 +885,16 @@ def run_test(times = 1):
     ###################
     average += (time.time() - start)
   print(average / times)
-  
+
 if __name__ == "__main__":
   if 0 == 1:
     run_test(1000)
     exit(0)
-  
+
   trapdoor = {
     'uov': UOV(),
-    'sts': STS(2, [2, 4], [2, 4]),
+    'sts': STS(3, [2, 2, 2], [2, 2, 2]),
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(4, 4, trapdoor['sts'])
+  mq = MQ(6, 6, trapdoor['uov'])
