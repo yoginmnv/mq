@@ -6,8 +6,6 @@
 #http://docs.python-guide.org/en/latest/writing/structure/
 #https://github.com/kennethreitz/samplemod
 
-#http://doc.sagemath.org/html/en/tutorial/tour_algebra.html
-#https://en.wikipedia.org/wiki/Remainder
 from pprint import pprint
 from random import choice
 from random import randint
@@ -18,7 +16,8 @@ from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
 import logging
 import time
 
-logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
+# levels = NOTSET INFO DEBUG WARNING
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
 
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
@@ -48,7 +47,7 @@ class MQ(object):
   
   def __init__(self, n, m, trapdoor):
     self.logger = logging.getLogger(self.__class__.__name__)
-    self.logger.info('Creating instance of MQ')
+    self.logger.info('Creating instance of MQ n=%s, m=%s' % (n, m))
     if( n < 1 ):
       raise ValueError('Count of variables have to be greater than 1')
     if( m < 1 ):
@@ -59,18 +58,39 @@ class MQ(object):
     self.set_trapdoor(trapdoor)
   
   def set_trapdoor(self, trapdoor):
+    self.logger.debug('Enter ------------------------------')
     self.trapdoor = trapdoor
     self.trapdoor.create_trapdoor(self) # create private key
+    pprint(self.trapdoor._P)
+    exit(0)
     self.S = AffineTransformation(self.n, 'S') # private key
-    self.T = AffineTransformation(self.n, 'T') # private key
+    
+    if isinstance(trapdoor, UOV) or isinstance(trapdoor, STS):
+      self.T = AffineTransformation(self.m, 'T') # private key
+    else:
+      self.T = AffineTransformation(self.n, 'T') # private key
+    
     self._PS_product = self.substitute_and_multiply(self.trapdoor._P, self.S.transformation)
     self.T_PS_product = self.substitute(self.T.transformation, self._PS_product) # public key
-  
+    
+    if 0:
+      pprint(self.trapdoor._P)
+      pprint(self.S.transformation)
+      pprint(self.T.transformation)
+      print('------------------------------')
+      pprint(self._PS_product)
+      pprint(self.T_PS_product)
+    
   def substitute_and_multiply(self, trapdoor, transformation_s):
+    self.logger.debug('Enter ------------------------------')
     result = {}
     
     for key in trapdoor: # loop throug all keys(y1, y2, ...yn) in trapdoor
+      self.logger.debug('Key %s' % key)
+      
       for variable in trapdoor[key]: # for each variable in equation
+        self.logger.debug('Variable %s' % variable)
+        
         if MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
           var = variable.split(MQ.OPERATOR_MUL)
           
@@ -93,22 +113,26 @@ class MQ(object):
         
         else:
           for transformation_variable in transformation_s[variable].split(MQ.VARIABLE_SEPARATOR):
+            self.logger.debug('transformation_variable %s' % transformation_variable)
             self.insert_value_dictionary(result, key, transformation_variable, True)
-    
+      
     self.logger.info('_P o S=%s' % result)
     return result
   
-  def substitute(self, transformation_t, PS):
+  def substitute(self, transformation_t, _PS):
+    self.logger.debug('Enter ------------------------------')
     result = {}
     
     for key in transformation_t:
+      self.logger.debug('Key %s' % key)
       variables = transformation_t[key].split(MQ.VARIABLE_SEPARATOR)
       
       for variable in variables:
+        self.logger.debug('Variable %s' % variable)
         if variable == '1':
           self.insert_value_dictionary(result, key, '1', True)
         else:
-          self.insert_value_dictionary(result, key, PS[variable], False)
+          self.insert_value_dictionary(result, key, _PS[variable], False)
     
     self.logger.info('T o _P o S=%s' % result)
     return result
@@ -117,12 +141,16 @@ class MQ(object):
     """
     Appends product of values to list arranged according to index: val1_index, val2_index
     """
+    self.logger.debug('Enter ------------------------------')
+    
     if value1 < value2:
       array.append(value1 + MQ.OPERATOR_MUL + value2)
     else:
       array.append(value2 + MQ.OPERATOR_MUL + value1)
   
   def insert_value_ordered(self, dictionary, key, value1, value2, as_set):
+    self.logger.debug('Enter ------------------------------')
+    
     if value1 == value2:
       self.insert_value_dictionary(dictionary, key, value1, as_set)
     elif value1 < value2:
@@ -130,7 +158,8 @@ class MQ(object):
     else:
       self.insert_value_dictionary(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1, as_set)
   
-  def insert_value_dictionary(self, dictionary, key, value, as_set):   
+  def insert_value_dictionary(self, dictionary, key, value, as_set):
+    self.logger.debug('Enter ------------------------------')
     self.logger.debug('Inserting at key = %s, value = %s' % (key, value))
     self.logger.debug('Dictionary before inserting\n%s' % dictionary)
     
@@ -151,18 +180,18 @@ class MQ(object):
 
 class AffineTransformation(object):
   """
-  
+  Create matrix of dimension n * n over finite field with 2 elements: 0 and 1, and vector n-bits long
+  http://doc.sagemath.org/html/en/reference/groups/sage/groups/affine_gps/affine_group.html
   """
   def __init__(self, dimension, transf_type):
     self.logger = logging.getLogger(self.__class__.__name__)
-    self.logger.info('Creating instance of AffineTransformation')
+    self.logger.info('Creating instance of AffineTransformation of size=%s' % dimension)
     
     if dimension < 2:
       raise ValueError('Dimension have to be greather then 2')
     if not (transf_type == 'S' or transf_type == 'T'):
       raise ValueError('Transformation type shoudl be S or T')
     
-    self.dimension = dimension
     self.transf_type = transf_type
     self.group = AffineGroup(dimension, GF(2))
     self.element = self.group.random_element()
@@ -170,10 +199,12 @@ class AffineTransformation(object):
     self.vector = self.element.b()
     self.logger.debug('created matrix=%s' % self.matrix)
     self.logger.debug('created vector=%s' % self.vector)
-    self.transformation = self.compute_transformation()
+    self.transformation = self.compute_transformation(dimension)
     # inverzna transformacia ~self.matrix alebo self.matrix.inverse()
     
-  def compute_transformation(self):
+  def compute_transformation(self, dimension):
+    self.logger.debug('Enter ------------------------------')
+    
     transformation = {}
     variable = ''
     if self.transf_type == 'S':
@@ -181,10 +212,10 @@ class AffineTransformation(object):
     else:
       variable = MQ.VARIABLE_Y
     
-    for row in range(self.dimension): # for each row in matrix
+    for row in range(dimension): # for each row in matrix
       row_index = variable + str(row + 1) # create row index
       
-      for column in range(self.dimension): # for each column in matrix
+      for column in range(dimension): # for each column in matrix
         if self.matrix[row][column] == 1: # if matrix[row][column] == 1 add variable to equation
           if row_index in transformation: # if key exists
             transformation[row_index] += (MQ.VARIABLE_SEPARATOR + variable + str(column + 1))
@@ -247,6 +278,8 @@ class UOV(MQ):
     
     self.logger.info('Vinegar variables %s' % self.vinegar)
     self.logger.info('Oil variables %s' % self.oil)
+    if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
+      variables.sort()
     self.logger.debug('Product of variables %s' % variables)
     
     c_min = mq.n - 1
@@ -307,10 +340,10 @@ class STS(MQ):
       raise ValueError('Count of equations is not equal to layers_count')
   
   def create_trapdoor(self, mq):
-    self.logger.info('creating trapdoor for STS')
+    self.logger.info('Creating trapdoor for STS')
     self.mq = mq
     
-    product = self.create_product(self.mq.n)
+    product = self.create_product(self.mq.n) # x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ...
     # ake premenne sa maju vyskytovat v rovniciach
     should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
     
@@ -374,6 +407,8 @@ class STS(MQ):
     Return product of x variables as list: 
     x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
     """
+    self.logger.debug('Enter ------------------------------')
+    
     product = [MQ.VARIABLE_X + '1']
     
     n += 1
@@ -395,6 +430,8 @@ class PolynomialBasedTrapdoor(MQ):
     Return the list of coefficients of the lexicographically smallest 
     irreducible polynomial of degree n over the Gladis field of 2 elements.
     """
+    self.logger.debug('Enter ------------------------------')
+    
     return GF(2)[variable](GF2X_BuildIrred_list(n))
   
   def create_random_irreducible_polynomial(self, variable, n):
@@ -403,6 +440,8 @@ class PolynomialBasedTrapdoor(MQ):
     Return the list of coefficients of an irreducible polynomial of degree n 
     of minimal weight over the Gladis field of 2 elements.
     """
+    self.logger.debug('Enter ------------------------------')
+    
     return GF(2)[variable](GF2X_BuildRandomIrred_list(n))
   
   def create_equation(self, n):
@@ -411,6 +450,8 @@ class PolynomialBasedTrapdoor(MQ):
     transformed into dictionary where keys are Alphas as strings 
     (MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER + exponent) i.e. L^2
     """
+    self.logger.debug('Enter ------------------------------')
+    
     X = {};
     
     for exponent in range(n):
@@ -423,6 +464,8 @@ class PolynomialBasedTrapdoor(MQ):
     Return dictionary with remainders after raising irreducible polynomial 
     over its size
     """
+    self.logger.debug('Enter ------------------------------')
+    
     R = PolynomialRing(GF(2), key)
     S = R.quotient(irreducible_polynomial, key)
     a = S.gen()
@@ -441,6 +484,8 @@ class PolynomialBasedTrapdoor(MQ):
     """
     Raises the polynomial with exponent 2 n-times; polynomial^2^times
     """
+    self.logger.debug('Enter ------------------------------')
+    
     # create copy of dictionary, as we don't want to change it
     polynomial_copy = {}
     for key in polynomial:
@@ -469,6 +514,8 @@ class PolynomialBasedTrapdoor(MQ):
     return polynomial_copy
   
   def multiply_polynomials(self, left_side, right_side, remainders):
+    self.logger.debug('Enter ------------------------------')
+    
     result = {}
     
     for left_key in left_side:
@@ -500,6 +547,8 @@ class PolynomialBasedTrapdoor(MQ):
     return result
   
   def edit_key(self, key):
+    self.logger.debug('Enter ------------------------------')
+    
     # fix as sagemath return L^0 as 1 and L^1 as L
     if key == '1':
       return MQ.VARIABLE_LAMBDA + '^0'
@@ -513,7 +562,9 @@ class PolynomialBasedTrapdoor(MQ):
 class MIA(PolynomialBasedTrapdoor):
   """
   Matsumoto-Imai
+  use n that is not divisible by 2^n: 4, 8, 16, 32, 64, ...
   http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html
+  
   1. vygenerovat lambdu ak je to mozne -> GCD(2^n - 1, 2^L + 1) == 1
   2. vygenerovat vyraz v tvare x1 + x2*L^1 + x3*L^2 + ... x_n*L^n-1
   3. vygenerovat ireducibilny polynom stupna n
@@ -530,7 +581,7 @@ class MIA(PolynomialBasedTrapdoor):
     self._P = {}
     
   def create_trapdoor(self, mq):
-    self.logger.info('creating trapdoor for MIA')
+    self.logger.info('Creating trapdoor for MIA')
     self.mq = mq
     self._lambda = self.compute_lambda()
     self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
@@ -564,6 +615,8 @@ class MIA(PolynomialBasedTrapdoor):
     (2^n)-1 < (2^L)+1 is fulfilled, where n is degree of polynomial then is
     raised error
     """
+    self.logger.debug('Enter ------------------------------')
+    
     lamb = 1
     first = 2 ** self.mq.n - 1
     second = 2 ** lamb + 1
@@ -575,7 +628,7 @@ class MIA(PolynomialBasedTrapdoor):
       lamb += 1
       second = 2 ** lamb + 1
     
-    raise ValueError('Lambda not found for n = ' + str(self.mq.n))
+    raise ValueError('Lambda not found for n=%s' % self.mq.n)
 
 
 
@@ -678,6 +731,7 @@ class HFE(PolynomialBasedTrapdoor):
     return self._P
           
   def create_hfe_polynomial(self, degree):
+    self.logger.debug('Enter ------------------------------')
     # Let's create polynomial in HFE form
     C = {}
     B = {}
@@ -821,7 +875,7 @@ def run_test(times = 1):
   
 if __name__ == "__main__":
   if 0 == 1:
-    run_test(50)
+    run_test(1000)
     exit(0)
   
   trapdoor = {
@@ -830,4 +884,4 @@ if __name__ == "__main__":
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(5, 4, trapdoor['hfe'])
+  mq = MQ(4, 4, trapdoor['sts'])
