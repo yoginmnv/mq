@@ -661,6 +661,7 @@ class HFE(PolynomialBasedTrapdoor):
     self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
     base_polynomial = self.create_equation(mq.n)
     
+    #count = (2 ** self.mq.n) - 1 # modulo
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
     d_range = range(mq.n, mq.n + 3) # pick d that should be small ?!
     self.d = choice(d_range) # pick random value from range
