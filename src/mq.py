@@ -115,7 +115,7 @@ class MQ(object):
           for transformation_variable in transformation_s[variable].split(MQ.VARIABLE_SEPARATOR):
             self.logger.debug('transformation_variable %s' % transformation_variable)
             self.insert_value_dictionary(result, key, transformation_variable, True)
-      
+    
     self.logger.info('_P o S=%s' % result)
     return result
   
