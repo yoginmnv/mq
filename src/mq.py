@@ -16,9 +16,6 @@ from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
 import logging
 import time
 
-# levels = NOTSET INFO DEBUG WARNING
-logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
-
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
 __license__ = "GPL"
@@ -61,6 +58,9 @@ class MQ(object):
     self.logger.debug('Enter ------------------------------')
     self.trapdoor = trapdoor
     self.trapdoor.create_trapdoor(self) # create private key
+    if HUMAN_PRINT:
+      print('==============================')
+    
     self.S = AffineTransformation(self.n, 'S') # private key
     
     if isinstance(trapdoor, UOV) or isinstance(trapdoor, STS):
@@ -71,12 +71,17 @@ class MQ(object):
     self._PS_product = self.substitute_and_multiply(self.trapdoor._P, self.S.transformation)
     self.T_PS_product = self.substitute(self.T.transformation, self._PS_product) # public key
     
-    if 0:
+    if HUMAN_PRINT:
+      print('_P')
       pprint(self.trapdoor._P)
+      print('Affine transformation S')
       pprint(self.S.transformation)
+      print('Affine transformation S')
       pprint(self.T.transformation)
       print('------------------------------')
+      print('_P o S')
       pprint(self._PS_product)
+      print('T o _P o S')
       pprint(self.T_PS_product)
     
   def substitute_and_multiply(self, trapdoor, transformation_s):
@@ -146,16 +151,6 @@ class MQ(object):
     else:
       array.append(value2 + MQ.OPERATOR_MUL + value1)
   
-  def insert_value_ordered(self, dictionary, key, value1, value2, as_set):
-    self.logger.debug('Enter ------------------------------')
-    
-    if value1 == value2:
-      self.insert_value_dictionary(dictionary, key, value1, as_set)
-    elif value1 < value2:
-      self.insert_value_dictionary(dictionary, key, value1 + MQ.OPERATOR_MUL + value2, as_set)
-    else:
-      self.insert_value_dictionary(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1, as_set)
-  
   def insert_value_dictionary(self, dictionary, key, value, as_set):
     self.logger.debug('Enter ------------------------------')
     self.logger.debug('Inserting at key = %s, value = %s' % (key, value))
@@ -173,6 +168,17 @@ class MQ(object):
         dictionary[key] = value # new set with elements from both s and t
     
     self.logger.debug('Dictionary after inserting\n%s' % dictionary)
+  
+  def insert_value_ordered(self, dictionary, key, value1, value2, as_set):
+    self.logger.debug('Enter ------------------------------')
+    
+    if value1 == value2:
+      self.insert_value_dictionary(dictionary, key, value1, as_set)
+    elif value1 < value2:
+      self.insert_value_dictionary(dictionary, key, value1 + MQ.OPERATOR_MUL + value2, as_set)
+    else:
+      self.insert_value_dictionary(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1, as_set)
+  
 
 
 
@@ -235,10 +241,16 @@ class AffineTransformation(object):
 class UOV(MQ):
   """
   Unbalanced oil and vinegar
+  
+  Attributes:
+    oil_count: positive number
+              if zero: then count of vinegar viariables will be twice or more than oil variables,
+              other: count of vinegar variables will equals to (count of variables in cryptosystem) - (oil_count)
   """
-  def __init__(self):
+  def __init__(self, oil_count = 0):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of UOV')
+    self.oil_count = oil_count
     self.oil = []
     self.vinegar = []
     self._P = {}
@@ -250,27 +262,40 @@ class UOV(MQ):
     variables = [MQ.VARIABLE_X + str(i) for i in range(1, mq.n + 1)]
     shuffle(variables)
     
-    # divide them in oil and vinegar variables
-    middle = mq.n / 2
-    self.oil = variables[0:middle]
-    # the more vinegar variables the harder is it to get original message
-    self.vinegar = variables[middle:]
-    
-    # get lenght of list for for loops
-    oil_len = middle
-    if mq.n & 1 == 0:
-      vinegar_len = middle
+    oil_count = self.oil_count
+    # if user doesn`t specify count of oil variables
+    if not oil_count:
+      if mq.n > 2:
+        # ensures that count of vinegar variables will be twice as many as count of oil variables
+        oil_count = mq.n / 3
+        vinegar_count = mq.n - oil_count
+
+        self.oil = variables[0:oil_count]
+        self.vinegar = variables[oil_count:]
+      else:
+        # n = 2, n < 2 is treated in MQ class
+        oil_count = vinegar_count = 1
+        self.oil = variables[0]
+        self.vinegar = variables[1]
     else:
-      vinegar_len = middle + 1
+      vinegar_count = mq.n - oil_count
+      if vinegar_count < 1:
+        raise BaseException("Count of vinegar variables is < 1, check setting of params: mq.n, uov.oil_count")
+      
+      if oil_count > vinegar_count:
+        self.logger.warning("Scheme may not be secure: count of oil variables > count of vinegar variables")
+      
+      self.oil = variables[0:oil_count]
+      self.vinegar = variables[oil_count:]
     
     variables.append('1')
     # add product of variables(vinegar*vinegar, vinegar*oil) that may be occure in equation
-    for i in range(vinegar_len): # loop through all vinegar variables
-      for j in range(i + 1, vinegar_len):
+    for i in range(vinegar_count): # loop through all vinegar variables
+      for j in range(i + 1, vinegar_count):
         # insert product of vinegar variables arranged according to index
         self.insert_value_list(variables, self.vinegar[i], self.vinegar[j])
       
-      for j in range(oil_len): # loop through all oil variables
+      for j in range(oil_count): # loop through all oil variables
         # insert product of oil and vinegar variables arranged according to index
         self.insert_value_list(variables, self.vinegar[i], self.oil[j])
     
@@ -280,6 +305,7 @@ class UOV(MQ):
       variables.sort()
     self.logger.debug('Product of variables %s' % variables)
     
+    # TODO domysliet rozsah premennych v rovnici napr mq.n / 2, * 2
     c_min = mq.n - 1
     c_max = mq.n + 1
     lottery = [i for i in range(len(variables))]
@@ -293,19 +319,45 @@ class UOV(MQ):
         self.insert_value_dictionary(self._P, MQ.VARIABLE_Y + str(i), variables[lottery[j]], True)
         
         # if condition added because of saving string comparasion cost
-        if nonlinear == False:
+        if not nonlinear:
           if MQ.OPERATOR_MUL in variables[lottery[j]]:
             nonlinear = True
       
-      if nonlinear == False:
-        i -= 1
-      
-      i += 1
+      if nonlinear:
+        i += 1
+      else:
+        self._P[MQ.VARIABLE_Y + str(i)] = set()
     
-    self.logger.info('_P=%s' % self._P)
+    self.logger.info('_P=%s' % self._P)  
+    if HUMAN_PRINT:
+      self.human_print()
+    
     return self._P
 
+  def human_print(self):
+    print self.__class__.__name__
+    print 'Počet premenných =', self.mq.n
+    print 'Počet rovníc =', self.mq.m
+    print 'Octové premenné:',
+    for variable in self.vinegar:
+      print variable + ',',
+    print('')
 
+    print 'Olejové premenné:',
+    for variable in self.oil:
+      print variable + ',',
+    print('')
+
+    for variable in self._P:
+      print variable + ' =',
+      plus = None
+      for eq in self._P[variable]:
+        if plus == None:
+          print eq,
+        else:
+          print '+ ' + eq,
+        plus = 0
+      print('')
 
 class STS(MQ):
   """
@@ -351,7 +403,7 @@ class STS(MQ):
       triangle_number = variables_count * (variables_count + 1) / 2 # compute how many variables can be picked from list product for current count variables in layer
       self.logger.debug('In layer=%s, count of variables=%s(triangle number=%s), count of equations=%s' % (layer + 1, variables_count, triangle_number, self.equations_in_layer[layer]))
  
-      # check later this condition
+      # TODO check later this condition
 #      if self.equations_in_layer[layer] > triangle_number: # check if is possible to generate so much equations
 #        raise ValueError('Count of equations in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(triangle_number))
       
@@ -398,7 +450,29 @@ class STS(MQ):
         shuffle(sub_product)
     
     self.logger.info('_P=%s' % self._P)
+    if HUMAN_PRINT:
+      self.human_print()
+    
     return self._P
+  
+  def human_print(self):
+    print self.__class__.__name__
+    print 'Počet premenných =', self.mq.n
+    print 'Počet rovníc =', self.mq.m
+    print 'Počet vrstiev =', self.layers_count
+    print '----------------'
+    #self.variables_in_layer = variables_in_layer
+    #self.equations_in_layer = equations_in_layer
+    for variable in self._P:
+      print variable + ' =',
+      plus = None
+      for eq in self._P[variable]:
+        if plus == None:
+          print eq,
+        else:
+          print '+ ' + eq,
+        plus = 0
+      print('')
   
   def check_params(self): 
     """
@@ -618,8 +692,25 @@ class MIA(PolynomialBasedTrapdoor):
     
     self._P = result
     self.logger.info('_P=%s' % self._P)
-    return self._P
+    if HUMAN_PRINT:
+      self.human_print(base_polynomial)
     
+    return self._P
+  
+  def human_print(self, base_polynomial):
+    print self.__class__.__name__
+    
+    for key in base_polynomial:
+      for value in base_polynomial[key]:
+        print str(value) + ' * +',
+    print('')
+    
+    for key in self._P:
+      print key + ' =',
+      for values in self._P[key]:
+        print values + ' +',
+      print('')
+  
   def compute_lambda(self):
     """
     Computes number L, which fulfills the condition 
@@ -741,8 +832,20 @@ class HFE(PolynomialBasedTrapdoor):
     
     self._P = result
     self.logger.info('_P=%s' % self._P)
+    if HUMAN_PRINT:
+      self.human_print()
+    
     return self._P
-          
+  
+  def human_print(self):
+    print self.__class__.__name__
+    
+    for equation in self._P:
+      print equation + ' =',
+      for variable in self._P[equation]:
+        print variable + ' +',
+      print('')
+    
   def create_hfe_polynomial(self, degree):
     self.logger.debug('Enter ------------------------------')
     # Let's create polynomial in HFE form
@@ -796,59 +899,12 @@ class HFE(PolynomialBasedTrapdoor):
     # equation in HFE form
     return HFE
 
-# Main
 class MHRS:
-  # 1. vygenerovat maticu A_s, vektor b_s
-  # 2. vyjadrit rovnice(1) z matice a vektora = x_m
-  # 3. pouzit vybranu strukturu = y_m
+  def __init__(self, mq):
+    self.mq = mq
   
-  # 4. vygenerovat maticu A_t, vektor b_t
-  # 5. vyjadrit rovnice(3) z matice a vektora = y_m
-  # dosadit rovnice(2) do rovnic(3) y_m
-  def __init__(self, degree):
-    self.T = AffineTransformation(degree) # affine transformation, private
-    self.trapdoor = None # private
-    self.S = AffineTransformation(degree) # affine transformation, private
-    self.P = [] # public, P = T o _P o S
-    
-  def compute_p(self):
-    self.P = 0
-    
-    
-def premenne_z(n):
-  premenneZ = []
-  
-  n += 1
-  
-  for i in range(2, n):
-    for j in range(1, i):
-      premenneZ.append('z' + str(j) + '_' + str(i))
-          
-  return premenneZ
-
-def premenne(n, premenneZ):
-  premenne = []
-  
-  n += 1
-  
-  for i in range(1, n):
-    premenne.append('x' + str(i))
-  # join | concanetate two lists
-  premenne += premenneZ
-  
-  A = BooleanPolynomialRing(names=premenne)
-  #print "A = ", A
-  A.inject_variables(verbose=false)
-  #print "A inject = ", A
-  Slovnik = A.gens_dict()
-  print "Slovnik = ", Slovnik
-  
-  n -= 1
-  Slovnik2 = {}
-  for i in range(1, n):
-    for j in range(i + 1, n + 1):
-      Slovnik2[Slovnik['x' + str(i)] * Slovnik['x' + str(j)]] = Slovnik['z' + str(i) + '_' + str(j)]
-  print(Slovnik2)
+  def transform(self):
+    pass
   
 def create_polynomial(elements, degree):
   if elements <= 1:
@@ -886,15 +942,20 @@ def run_test(times = 1):
     ###################
     average += (time.time() - start)
   print(average / times)
+  
+# levels = NOTSET INFO DEBUG WARNING
+logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
 
+# pretty print
+HUMAN_PRINT = 1
 if __name__ == "__main__":
   if 0 == 1:
     run_test(1000)
     exit(0)
-
+  
   trapdoor = {
-    'uov': UOV(),
-    'sts': STS(3, [2, 2, 2], [2, 2, 2]),
+    'uov': UOV(0),
+    'sts': STS(2, [2, 3], [2, 2]),
     'mia': MIA(),
     'hfe': HFE()
   }
