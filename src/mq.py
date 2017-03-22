@@ -52,6 +52,8 @@ class MQ(object):
     
     self.n = n
     self.m = m
+    if isinstance(trapdoor, MIA) or isinstance(trapdoor, HFE):
+      self.m = n
     self.set_trapdoor(trapdoor)
   
   def set_trapdoor(self, trapdoor):
@@ -76,13 +78,15 @@ class MQ(object):
       pprint(self.trapdoor._P)
       print('Affine transformation S')
       pprint(self.S.transformation)
-      print('Affine transformation S')
+      print('Affine transformation T')
       pprint(self.T.transformation)
       print('------------------------------')
       print('_P o S')
       pprint(self._PS_product)
       print('T o _P o S')
       pprint(self.T_PS_product)
+    
+    MQChallengeFile(self.n, self.m, self.T_PS_product).store()
     
   def substitute_and_multiply(self, trapdoor, transformation_s):
     self.logger.debug('Enter ------------------------------')
@@ -178,7 +182,6 @@ class MQ(object):
       self.insert_value_dictionary(dictionary, key, value1 + MQ.OPERATOR_MUL + value2, as_set)
     else:
       self.insert_value_dictionary(dictionary, key, value2 + MQ.OPERATOR_MUL +  value1, as_set)
-  
 
 
 
@@ -227,13 +230,114 @@ class AffineTransformation(object):
             transformation[row_index] = variable + str(column + 1)
       
       if self.vector[row] == 1:
-        if row_index in transformation: 
+        if row_index in transformation:
           transformation[row_index] += (MQ.VARIABLE_SEPARATOR + '1')
         else:
           transformation[row_index] = '1'
     
     self.logger.info('Transformation %s=%s' % (self.transf_type, transformation))
     return transformation
+
+class MQChallengeFile(object):
+  """
+  MQ challenge system https://www.mqchallenge.org/
+  
+  Args:
+    n (int):
+    m (int):
+    public_key (dict):
+    ireducible_polynomial (set):
+  """
+  def __init__(self, n, m, public_key, ireducible_polynomial=None):
+    self.logger = logging.getLogger(self.__class__.__name__)
+    self.logger.info('Creating instance of MQChallengeFile')
+    self.n = n
+    self.m = m
+    self.public_key = public_key
+    self.ireducible_polynomial = ireducible_polynomial
+    #self.triangle = [((i * (i + 1)) / 2) for i in range(n)]
+    self.triangle = [0]
+    # we need just + 1 but + 2 is for saving computation the matrix column size in method store()
+    for i in range(1, n + 2):
+      self.triangle.append(self.triangle[i - 1] + i)
+  
+  def set_n(self, n):
+    self.n = n
+  
+  def set_n(self, m):
+    self.m = m
+  
+  def set_public_key(self, public_key):
+    self.public_key = public_key
+  
+  def set_ireducible_polynomial(self, ireducible_polynomial):
+    self.ireducible_polynomial = ireducible_polynomial
+  
+  class SystemType(object):
+    """
+    Coefficient field F in MQ system
+    """
+    # Type I-III: Encryption,	m=2n
+    # Type IV-VI: Signature,	n≈1.5m
+    TypeI   = TypeIV = '2'
+    TypeII  = TypeV  = '2**8'
+    TypeIII = TypeVI = '31'
+  
+  class SeedType(object):
+    """
+    seed used to generate the MQ system
+    """
+    _0, _1, _2, _3, _4 = range(5)
+  
+  class OrderType(object):
+    """
+    monomials representation in MQ system more on http://www.math.uiuc.edu/Macaulay2/doc/Macaulay2-1.9/share/doc/Macaulay2/Macaulay2Doc/html/_monomial_sporderings.html
+    """
+    LEX = 'lexicographical monomial order'
+    GREVLEX = 'graded reverse lex order'
+  
+  def store(self, system_type=SystemType.TypeI, seed_type=SeedType._0, order_type=OrderType.GREVLEX):
+    result = [[0 for column in range(self.triangle[-1])] for row in range(self.m)] 
+    
+    f = open('toy', 'w')
+    
+    if system_type == self.SystemType.TypeII or system_type == self.SystemType.TypeV:
+      if not self.ireducible_polynomial:
+        raise BaseException('Ireducible polynomial not provided by creating MQChallengeFile object')
+      else:
+        f.write('Galois Field : GF(2)[n] / %s\n' % self.ireducible_polynomial)
+    else:
+      f.write('Galois Field : GF(%s)\n' % system_type)
+    
+    f.write('Number of variables (n) : %d\n' % self.n)
+    f.write('Number of equations (m) : %d\n' % self.m)
+    f.write('Seed : %d\n' % seed_type)
+    f.write('Order : %s\n\n' % order_type)
+    f.write('*********************\n')
+    
+    for key in self.public_key: # y1, y2, ..., y_m
+      key_index = int(key[1:]) - 1 # indexing from zero
+      
+      for item in self.public_key[key]: # equation for key
+        if order_type == self.OrderType.GREVLEX:
+          if MQ.OPERATOR_MUL in item:
+            # quadratic term: 
+            first, second = item.split(MQ.OPERATOR_MUL)
+            # if term is quadratic: get index of second term - 1 - index of first term - 1
+            result[key_index][self.triangle[int(second[1:]) - 1] + (int(first[1:]) - 1)] = 1
+          elif item == '1':
+            # absolute term: insert at the end
+            result[key_index][self.triangle[-1] - 1] = 1
+          else:
+            # linear term: 
+            result[key_index][self.triangle[-2] + int(item[1:]) - 1] = 1
+    
+    pprint(result)
+    for row in range(self.m):
+      for column in range(self.triangle[-1]):
+        f.write('%d ' % result[row][column])
+      f.write(';\n')
+    f.close()  # you can omit in most cases as the destructor will call it
 
 
 
@@ -243,9 +347,16 @@ class UOV(MQ):
   Unbalanced oil and vinegar
   
   Attributes:
-    oil_count: positive number
-              if zero: then count of vinegar viariables will be twice or more than oil variables,
-              other: count of vinegar variables will equals to (count of variables in cryptosystem) - (oil_count)
+    oil_count (int): positive number
+    {
+      if zero: count of vinegar variables will be twice or more than oil variables
+        other: count of vinegar variables will equals to (count of variables in cryptosystem(n)) - (oil_count)
+    }
+  
+  Raise:
+  
+  Return:
+    
   """
   def __init__(self, oil_count = 0):
     self.logger = logging.getLogger(self.__class__.__name__)
@@ -267,15 +378,15 @@ class UOV(MQ):
     if not oil_count:
       if mq.n > 2:
         # ensures that count of vinegar variables will be twice as many as count of oil variables
-        oil_count = mq.n / 3
+        oil_count     = mq.n / 3
         vinegar_count = mq.n - oil_count
 
-        self.oil = variables[0:oil_count]
+        self.oil     = variables[0:oil_count]
         self.vinegar = variables[oil_count:]
       else:
         # n = 2, n < 2 is treated in MQ class
-        oil_count = vinegar_count = 1
-        self.oil = variables[0]
+        oil_count    = vinegar_count = 1
+        self.oil     = variables[0]
         self.vinegar = variables[1]
     else:
       vinegar_count = mq.n - oil_count
@@ -296,7 +407,7 @@ class UOV(MQ):
         self.insert_value_list(variables, self.vinegar[i], self.vinegar[j])
       
       for j in range(oil_count): # loop through all oil variables
-        # insert product of oil and vinegar variables arranged according to index
+        # insert product of vinegar and oil variables arranged according to index
         self.insert_value_list(variables, self.vinegar[i], self.oil[j])
     
     self.logger.info('Vinegar variables %s' % self.vinegar)
@@ -331,6 +442,8 @@ class UOV(MQ):
     self.logger.info('_P=%s' % self._P)  
     if HUMAN_PRINT:
       self.human_print()
+    
+    del variables
     
     return self._P
 
@@ -369,7 +482,7 @@ class STS(MQ):
     equations_in_layer -- pocet rovnic v danej vrstve | count of equations in each layer
     variables_in_layer -- pocet premennych v danej vrstve | count of variables in each layer
     
-    example: n = 8, m = 8
+    Example: n = 8, m = 8
     2 layers, [4, 4] variables, [4, 4] equation
     2 layers, [2, 6] variables, [4, 4] equation
     
@@ -390,17 +503,18 @@ class STS(MQ):
     self.mq = mq
     self.check_params()
     
-    product = self.create_product(self.mq.n) # x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
+    product = self.create_product(mq.n) # x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
     self.logger.debug('Product of variables=\n%s' % product)
+    # create list of variables that may occure in result
     # ake premenne sa maju vyskytovat v rovniciach
-    should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, self.mq.n + 1)]
+    should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, mq.n + 1)]
     
     variables_count = 0
-    equation_index = 1 # store the result keys from y1(y2, y3, ..., yn) not from y0. Otherwise change for loop: for j in range(1, i + 1): # loop through previous equations
-    equations_sum = 0
+    equation_index  = 1 # store the result keys from y1(y2, y3, ..., yn) not from y0. Otherwise change for loop: for j in range(1, i + 1): # loop through previous equations
+    equations_sum   = 0
     for layer in range(self.layers_count): # for each layer
       variables_count += self.variables_in_layer[layer]
-      triangle_number = variables_count * (variables_count + 1) / 2 # compute how many variables can be picked from list product for current count variables in layer
+      triangle_number  = variables_count * (variables_count + 1) / 2 # compute how many variables can be picked from list product for current count variables in layer
       self.logger.debug('In layer=%s, count of variables=%s(triangle number=%s), count of equations=%s' % (layer + 1, variables_count, triangle_number, self.equations_in_layer[layer]))
  
       # TODO check later this condition
@@ -452,6 +566,10 @@ class STS(MQ):
     self.logger.info('_P=%s' % self._P)
     if HUMAN_PRINT:
       self.human_print()
+    
+    del product
+    del should_contains
+    del contain_vars
     
     return self._P
   
@@ -549,12 +667,16 @@ class PolynomialBasedTrapdoor(MQ):
     """
     Return dictionary with remainders after raising irreducible polynomial 
     over its size
+    
+    Args:
+      irreducible_polynobmial (type sage.rings.polynomial.polynomial_gf2x.Polynomial_GF2X): polynomial that is used in trapdoor
+      key (string): string that will be used as keys for the result dictionary
     """
     self.logger.debug('Enter ------------------------------')
     
     R = PolynomialRing(GF(2), key)
     S = R.quotient(irreducible_polynomial, key)
-    a = S.gen()
+    a = S.gen() # generator of this quotient ring
     
     key_raised_to = key + MQ.OPERATOR_POWER
     
@@ -581,7 +703,7 @@ class PolynomialBasedTrapdoor(MQ):
       squared_polynomial = {}
       
       for key in polynomial_copy: # loop through all keys in dictionary {L^0, L^1, ..., L^(n-1)}
-        # get exponent of actual key | lambda: L^x
+        # get exponent of actual key and raise them | lambda: L^x
         exponent = int(key[2:]) * 2
         
         if exponent < self.mq.n:
@@ -715,21 +837,21 @@ class MIA(PolynomialBasedTrapdoor):
     """
     Computes number L, which fulfills the condition 
     GCD((2^n)-1, (2^L)+1) == 1, if this number is not found until the condition 
-    (2^n)-1 < (2^L)+1 is fulfilled, where n is degree of polynomial then is
+    (2^n)-1 > (2^L)+1 is fulfilled, where n is degree of polynomial then is
     raised error
     """
     self.logger.debug('Enter ------------------------------')
     
-    lamb = 1
-    first = 2 ** self.mq.n - 1
-    second = 2 ** lamb + 1
+    lamb   = 1
+    first  = (2 ** self.mq.n) - 1
+    second = (2 ** lamb) + 1
     
-    while second < first:
+    while first > second:
       if gcd(first, second) == 1:
         return lamb
       
-      lamb += 1
-      second = 2 ** lamb + 1
+      lamb  += 1
+      second = (2 ** lamb) + 1
     
     raise ValueError('Lambda not found for n=%s' % self.mq.n)
 
@@ -947,7 +1069,7 @@ def run_test(times = 1):
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
 
 # pretty print
-HUMAN_PRINT = 1
+HUMAN_PRINT = 0
 if __name__ == "__main__":
   if 0 == 1:
     run_test(1000)
@@ -955,8 +1077,8 @@ if __name__ == "__main__":
   
   trapdoor = {
     'uov': UOV(0),
-    'sts': STS(2, [2, 3], [2, 2]),
+    'sts': STS(2, [2, 2], [2, 2]),
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(6, 6, trapdoor['uov'])
+  mq = MQ(4, 4, trapdoor['sts'])
