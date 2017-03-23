@@ -146,7 +146,7 @@ class MQ(object):
   
   def insert_value_list(self, array, value1, value2):
     """
-    Appends product of values to list arranged according to index: val1_index, val2_index
+    Appends product of values to list arranged according to index
     """
     self.logger.debug('Enter ------------------------------')
     
@@ -251,27 +251,16 @@ class MQChallengeFile(object):
   def __init__(self, n, m, public_key, ireducible_polynomial=None):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of MQChallengeFile')
+    self.filename = 'toytoy'
     self.n = n
     self.m = m
     self.public_key = public_key
     self.ireducible_polynomial = ireducible_polynomial
-    #self.triangle = [((i * (i + 1)) / 2) for i in range(n)]
+    #self.triangle = [((i * (i + 1)) / 2) for i in range(n + 2)]
     self.triangle = [0]
     # we need just + 1 but + 2 is for saving computation the matrix column size in method store()
     for i in range(1, n + 2):
       self.triangle.append(self.triangle[i - 1] + i)
-  
-  def set_n(self, n):
-    self.n = n
-  
-  def set_n(self, m):
-    self.m = m
-  
-  def set_public_key(self, public_key):
-    self.public_key = public_key
-  
-  def set_ireducible_polynomial(self, ireducible_polynomial):
-    self.ireducible_polynomial = ireducible_polynomial
   
   class SystemType(object):
     """
@@ -279,9 +268,9 @@ class MQChallengeFile(object):
     """
     # Type I-III: Encryption,	m=2n
     # Type IV-VI: Signature,	n≈1.5m
-    TypeI   = TypeIV = '2'
-    TypeII  = TypeV  = '2**8'
-    TypeIII = TypeVI = '31'
+    TYPE_I   = TYPE_IV = '2'
+    TYPE_II  = TYPE_V  = '2**8'
+    TYPE_III = TYPE_VI = '31'
   
   class SeedType(object):
     """
@@ -296,16 +285,17 @@ class MQChallengeFile(object):
     LEX = 'lexicographical monomial order'
     GREVLEX = 'graded reverse lex order'
   
-  def store(self, system_type=SystemType.TypeI, seed_type=SeedType._0, order_type=OrderType.GREVLEX):
+  def store(self, system_type=SystemType.TYPE_I, seed_type=SeedType._0, order_type=OrderType.GREVLEX):
+    self.logger.info('Storing public key into file %s' % self.filename)
     result = [[0 for column in range(self.triangle[-1])] for row in range(self.m)] 
     
-    f = open('toy', 'w')
+    f = open(self.filename, 'w')
     
-    if system_type == self.SystemType.TypeII or system_type == self.SystemType.TypeV:
+    if system_type == self.SystemType.TYPE_II or system_type == self.SystemType.TYPE_V:
       if not self.ireducible_polynomial:
         raise BaseException('Ireducible polynomial not provided by creating MQChallengeFile object')
       else:
-        f.write('Galois Field : GF(2)[n] / %s\n' % self.ireducible_polynomial)
+        f.write('Galois Field : GF(2)[%s] / %s\n' % (MQ.VARIABLE_X, self.ireducible_polynomial))
     else:
       f.write('Galois Field : GF(%s)\n' % system_type)
     
@@ -321,23 +311,21 @@ class MQChallengeFile(object):
       for item in self.public_key[key]: # equation for key
         if order_type == self.OrderType.GREVLEX:
           if MQ.OPERATOR_MUL in item:
-            # quadratic term: 
-            first, second = item.split(MQ.OPERATOR_MUL)
-            # if term is quadratic: get index of second term - 1 - index of first term - 1
+            # quadratic term:
+            (first, second) = item.split(MQ.OPERATOR_MUL)
             result[key_index][self.triangle[int(second[1:]) - 1] + (int(first[1:]) - 1)] = 1
-          elif item == '1':
+          elif MQ.VARIABLE_X in item:
+            # linear term:
+            result[key_index][self.triangle[-2] + int(item[1:]) - 1] = 1
+          else:
             # absolute term: insert at the end
             result[key_index][self.triangle[-1] - 1] = 1
-          else:
-            # linear term: 
-            result[key_index][self.triangle[-2] + int(item[1:]) - 1] = 1
     
-    pprint(result)
     for row in range(self.m):
       for column in range(self.triangle[-1]):
         f.write('%d ' % result[row][column])
       f.write(';\n')
-    f.close()  # you can omit in most cases as the destructor will call it
+    f.close()
 
 
 
@@ -354,11 +342,12 @@ class UOV(MQ):
     }
   
   Raise:
-  
-  Return:
+    BaseException
     
+  Return:
+    _P (dictionary): private key
   """
-  def __init__(self, oil_count = 0):
+  def __init__(self, oil_count=0):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of UOV')
     self.oil_count = oil_count
@@ -369,7 +358,7 @@ class UOV(MQ):
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for UOV')
     self.mq = mq
-    # create list of variables that may occure in result
+    # create base list of variables that may occure in result
     variables = [MQ.VARIABLE_X + str(i) for i in range(1, mq.n + 1)]
     shuffle(variables)
     
@@ -412,13 +401,11 @@ class UOV(MQ):
     
     self.logger.info('Vinegar variables %s' % self.vinegar)
     self.logger.info('Oil variables %s' % self.oil)
-    if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-      variables.sort()
-    self.logger.debug('Product of variables %s' % variables)
+    self.logger.info('Product of variables %s' % variables)
     
-    # TODO domysliet rozsah premennych v rovnici napr mq.n / 2, * 2
-    c_min = mq.n - 1
-    c_max = mq.n + 1
+    # TODO opytat sa na max
+    c_min = (mq.n / 2)
+    c_max = len(variables)
     lottery = [i for i in range(len(variables))]
     i = 1
     while i < mq.m + 1: # for each equation
@@ -444,6 +431,7 @@ class UOV(MQ):
       self.human_print()
     
     del variables
+    del lottery
     
     return self._P
 
@@ -477,10 +465,9 @@ class STS(MQ):
   Class for Stepwise Triangular Systems.
   
   Attributes:
-    MQ -- rodic | parent
-    layers_count -- pocet vrstiev | total count of layers
-    equations_in_layer -- pocet rovnic v danej vrstve | count of equations in each layer
-    variables_in_layer -- pocet premennych v danej vrstve | count of variables in each layer
+    layers_count (int): pocet vrstiev | total count of layers
+    variables_in_layer (list of int's): pocet premennych v danej vrstve | count of variables in each layer
+    equations_in_layer (list of int's): pocet rovnic v danej vrstve | count of equations in each layer
     
     Example: n = 8, m = 8
     2 layers, [4, 4] variables, [4, 4] equation
@@ -488,6 +475,9 @@ class STS(MQ):
     
     4 layers, [2, 2, 2, 2] variables, [2, 4, 6, 8] equation
     4 layers, [1, 2, 2, 3] variables, [1, 2, 2, 3] equation
+  
+  Return:
+    _P (dictionary): private key
   """
   
   def __init__(self, layers_count, variables_in_layer, equations_in_layer):
@@ -1054,8 +1044,9 @@ def create_polynomial(elements, degree):
 #
 # compute_remainder: spravit v metode nech L a 1 vracia uz ako L^1 a L^0
 # HFE subs: optimalizacia
+#if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
 
-def run_test(times = 1):
+def run_test(times=1):
   average = 0
   for test_runs in range(times):
     start = time.time()
@@ -1064,7 +1055,7 @@ def run_test(times = 1):
     ###################
     average += (time.time() - start)
   print(average / times)
-  
+
 # levels = NOTSET INFO DEBUG WARNING
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
 
@@ -1081,4 +1072,4 @@ if __name__ == "__main__":
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(4, 4, trapdoor['sts'])
+  mq = MQ(8, 4, trapdoor['uov'])
