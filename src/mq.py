@@ -7,12 +7,11 @@
 #https://github.com/kennethreitz/samplemod
 
 from pprint import pprint
-from random import choice
-from random import randint
-from random import shuffle
+from random import choice, randint, shuffle
 from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
+from sage.rings.complex_double import CDF
 import logging
 import time
 
@@ -52,6 +51,7 @@ class MQ(object):
     
     self.n = n
     self.m = m
+    self.ireducible_polynomial = None # just for MQChallengeFile
     if isinstance(trapdoor, MIA) or isinstance(trapdoor, HFE):
       self.m = n
     self.set_trapdoor(trapdoor)
@@ -60,16 +60,12 @@ class MQ(object):
     self.logger.debug('Enter ------------------------------')
     self.trapdoor = trapdoor
     self.trapdoor.create_trapdoor(self) # create private key
+    
     if HUMAN_PRINT:
       print('==============================')
     
     self.S = AffineTransformation(self.n, 'S') # private key
-    
-    if isinstance(trapdoor, UOV) or isinstance(trapdoor, STS):
-      self.T = AffineTransformation(self.m, 'T') # private key
-    else:
-      self.T = AffineTransformation(self.n, 'T') # private key
-    
+    self.T = AffineTransformation(self.m, 'T') # private key
     self._PS_product = self.substitute_and_multiply(self.trapdoor._P, self.S.transformation)
     self.T_PS_product = self.substitute(self.T.transformation, self._PS_product) # public key
     
@@ -86,23 +82,21 @@ class MQ(object):
       print('T o _P o S')
       pprint(self.T_PS_product)
     
-    MQChallengeFile(self.n, self.m, self.T_PS_product).store()
-    
   def substitute_and_multiply(self, trapdoor, transformation_s):
     self.logger.debug('Enter ------------------------------')
     result = {}
     
-    for key in trapdoor: # loop throug all keys(y1, y2, ...yn) in trapdoor
-      self.logger.debug('Key %s' % key)
+    for key in trapdoor:
+      self.logger.debug('(Key: varible) %s: %s' % (key, equation))
       
-      for variable in trapdoor[key]: # for each variable in equation
-        self.logger.debug('Variable %s' % variable)
-        
+      for variable in trapdoor[key]:
+        self.logger.debug('(varialbe: type) %s: %s' % (variable, type(variable)))
+
         if MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
           var = variable.split(MQ.OPERATOR_MUL)
           
-          eq1 = transformation_s[var[0]].split(MQ.VARIABLE_SEPARATOR)
-          eq2 = transformation_s[var[1]].split(MQ.VARIABLE_SEPARATOR)
+          eq1 = transformation_s[int(var[0][1:]) - 1]
+          eq2 = transformation_s[int(var[1][1:]) - 1]
           for eq1_var in eq1:
             for eq2_var in eq2:
               if eq1_var == '1':
@@ -119,7 +113,7 @@ class MQ(object):
           self.insert_value_dictionary(result, key, '1', True)
         
         else:
-          for transformation_variable in transformation_s[variable].split(MQ.VARIABLE_SEPARATOR):
+          for transformation_variable in transformation_s[int(variable[1:]) - 1]:
             self.logger.debug('transformation_variable %s' % transformation_variable)
             self.insert_value_dictionary(result, key, transformation_variable, True)
     
@@ -130,16 +124,16 @@ class MQ(object):
     self.logger.debug('Enter ------------------------------')
     result = {}
     
-    for key in transformation_t:
-      self.logger.debug('Key %s' % key)
-      variables = transformation_t[key].split(MQ.VARIABLE_SEPARATOR)
+    for row in range(len(transformation_t)):
+      self.logger.debug('Equation %s' % transformation_t[row])
+      key = MQ.VARIABLE_Y + str(row + 1)
       
-      for variable in variables:
+      for variable in transformation_t[row]:
         self.logger.debug('Variable %s' % variable)
-        if variable == '1':
-          self.insert_value_dictionary(result, key, '1', True)
-        else:
+        if MQ.VARIABLE_Y in variable[0]:
           self.insert_value_dictionary(result, key, _PS[variable], False)
+        else:
+          self.insert_value_dictionary(result, key, '1', True)
     
     self.logger.info('T o _P o S=%s' % result)
     return result
@@ -161,12 +155,12 @@ class MQ(object):
     self.logger.debug('Dictionary before inserting\n%s' % dictionary)
     
     if key in dictionary:
-      if as_set == True:
+      if as_set:
         dictionary[key] ^= set([value]) # new set with elements in either s or t but not both
       else:
         dictionary[key] ^= value # new set with elements in either s or t but not both
     else:
-      if as_set == True:
+      if as_set:
         dictionary[key] = set([value]) # new set with elements from both s and t
       else:
         dictionary[key] = value # new set with elements from both s and t
@@ -190,50 +184,38 @@ class AffineTransformation(object):
   Create matrix of dimension n * n over finite field with 2 elements: 0 and 1, and vector n-bits long
   http://doc.sagemath.org/html/en/reference/groups/sage/groups/affine_gps/affine_group.html
   """
-  def __init__(self, dimension, transf_type):
+  def __init__(self, degree, transf_type):
     self.logger = logging.getLogger(self.__class__.__name__)
-    self.logger.info('Creating instance of AffineTransformation of size=%s' % dimension)
+    self.logger.info('Creating instance of AffineTransformation of degree=%s' % degree)
     
-    if dimension < 2:
-      raise ValueError('Dimension have to be greather then 2')
+    if degree < 2:
+      raise ValueError('Dimension have to be equals or greater than 2')
     if not (transf_type == 'S' or transf_type == 'T'):
-      raise ValueError('Transformation type shoudl be S or T')
+      raise ValueError('Transformation type should be either S or T')
     
+    self.group = AffineGroup(degree, GF(2))
     self.transf_type = transf_type
-    self.group = AffineGroup(dimension, GF(2))
     self.element = self.group.random_element()
     self.matrix = self.element.A()
     self.vector = self.element.b()
     self.logger.debug('created matrix=%s' % self.matrix)
     self.logger.debug('created vector=%s' % self.vector)
-    self.transformation = self.compute_transformation(dimension)
+    self.transformation = self.compute_transformation(degree, transf_type)
     # inverzna transformacia ~self.matrix alebo self.matrix.inverse()
     
-  def compute_transformation(self, dimension):
+  def compute_transformation(self, degree, transf_type):
     self.logger.debug('Enter ------------------------------')
     
-    transformation = {}
-    variable = ''
-    if self.transf_type == 'S':
-      variable = MQ.VARIABLE_X
-    else:
-      variable = MQ.VARIABLE_Y
+    transformation = [[] for row in range(degree)] # self.group.degree()
+    variable = MQ.VARIABLE_X if 'S' in transf_type else MQ.VARIABLE_Y
     
-    for row in range(dimension): # for each row in matrix
-      row_index = variable + str(row + 1) # create row index
-      
-      for column in range(dimension): # for each column in matrix
-        if self.matrix[row][column] == 1: # if matrix[row][column] == 1 add variable to equation
-          if row_index in transformation: # if key exists
-            transformation[row_index] += (MQ.VARIABLE_SEPARATOR + variable + str(column + 1))
-          else:
-            transformation[row_index] = variable + str(column + 1)
+    for row in range(degree):
+      for column in range(degree):
+        if self.matrix[row][column] == 1:
+          transformation[row].append(variable + str(column + 1))
       
       if self.vector[row] == 1:
-        if row_index in transformation:
-          transformation[row_index] += (MQ.VARIABLE_SEPARATOR + '1')
-        else:
-          transformation[row_index] = '1'
+        transformation[row].append('1')
     
     self.logger.info('Transformation %s=%s' % (self.transf_type, transformation))
     return transformation
@@ -248,18 +230,18 @@ class MQChallengeFile(object):
     public_key (dict):
     ireducible_polynomial (set):
   """
-  def __init__(self, n, m, public_key, ireducible_polynomial=None):
+  def __init__(self, mq):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of MQChallengeFile')
     self.filename = 'toytoy'
-    self.n = n
-    self.m = m
-    self.public_key = public_key
-    self.ireducible_polynomial = ireducible_polynomial
+    self.n = mq.n
+    self.m = mq.m
+    self.public_key = mq.T_PS_product
+    self.ireducible_polynomial = mq.ireducible_polynomial
     #self.triangle = [((i * (i + 1)) / 2) for i in range(n + 2)]
     self.triangle = [0]
     # we need just + 1 but + 2 is for saving computation the matrix column size in method store()
-    for i in range(1, n + 2):
+    for i in range(1, mq.n + 2):
       self.triangle.append(self.triangle[i - 1] + i)
   
   class SystemType(object):
@@ -382,14 +364,17 @@ class UOV(MQ):
       if vinegar_count < 1:
         raise BaseException("Count of vinegar variables is < 1, check setting of params: mq.n, uov.oil_count")
       
-      if oil_count > vinegar_count:
-        self.logger.warning("Scheme may not be secure: count of oil variables > count of vinegar variables")
+      if vinegar_count < oil_count:
+        self.logger.warning("Scheme is not secure: count of vinegar variables is < count of oil variables")
+      
+      if vinegar_count < (oil_count / 2):
+        self.logger.warning("Scheme may not be secure: count of vinegar variables is not as 2 * count of oil variables")
       
       self.oil = variables[0:oil_count]
       self.vinegar = variables[oil_count:]
     
     variables.append('1')
-    # add product of variables(vinegar*vinegar, vinegar*oil) that may be occure in equation
+    # create product of variables(vinegar*vinegar, vinegar*oil) that may occure in equation
     for i in range(vinegar_count): # loop through all vinegar variables
       for j in range(i + 1, vinegar_count):
         # insert product of vinegar variables arranged according to index
@@ -405,16 +390,17 @@ class UOV(MQ):
     
     # TODO opytat sa na max
     c_min = (mq.n / 2)
-    c_max = len(variables)
+    c_max =  mq.n # len(variables)
     lottery = [i for i in range(len(variables))]
     i = 1
-    while i < mq.m + 1: # for each equation
+    while i < (mq.m + 1): # for each equation
       shuffle(lottery) # shuffle values
       count = randint(c_min, c_max) # random count of variables for equation
-      nonlinear = False # ensuring that equation contain nonlinear variables
+      nonlinear = False # ensuring that equation contain nonlinear variable
       
-      for j in range(count): # insert count variables into dictionary
-        self.insert_value_dictionary(self._P, MQ.VARIABLE_Y + str(i), variables[lottery[j]], True)
+      key = MQ.VARIABLE_Y + str(i)
+      for j in range(count): # insert selected count of variables into equation
+        self.insert_value_dictionary(self._P, key, variables[lottery[j]], True)
         
         # if condition added because of saving string comparasion cost
         if not nonlinear:
@@ -424,9 +410,9 @@ class UOV(MQ):
       if nonlinear:
         i += 1
       else:
-        self._P[MQ.VARIABLE_Y + str(i)] = set()
+        self._P[key] = set()
     
-    self.logger.info('_P=%s' % self._P)  
+    self.logger.info('_P=%s' % self._P)
     if HUMAN_PRINT:
       self.human_print()
     
@@ -483,10 +469,10 @@ class STS(MQ):
   def __init__(self, layers_count, variables_in_layer, equations_in_layer):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of STS')
-    self._P = {}
     self.layers_count = layers_count
     self.variables_in_layer = variables_in_layer
     self.equations_in_layer = equations_in_layer
+    self._P = {}
   
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for STS')
@@ -504,7 +490,7 @@ class STS(MQ):
     equations_sum   = 0
     for layer in range(self.layers_count): # for each layer
       variables_count += self.variables_in_layer[layer]
-      triangle_number  = variables_count * (variables_count + 1) / 2 # compute how many variables can be picked from list product for current count variables in layer
+      triangle_number  = (variables_count * (variables_count + 1)) / 2 # compute how many variables can be picked from list product for current count variables in layer
       self.logger.debug('In layer=%s, count of variables=%s(triangle number=%s), count of equations=%s' % (layer + 1, variables_count, triangle_number, self.equations_in_layer[layer]))
  
       # TODO check later this condition
@@ -522,7 +508,7 @@ class STS(MQ):
         rand = randint(equations_sum, triangle_number) # pick random number from range
         self._P[actual_equation] = set(sub_product[:rand])
         
-        # skontrolujem ci vytvorena rovnica obsahuje vsetky premenne
+        # check if created equation contains all variables
         contain_vars = set(should_contains[:variables_count])
         for variables in self._P[actual_equation]:
           contain_vars -= set(variables.split(MQ.OPERATOR_MUL))
@@ -539,7 +525,8 @@ class STS(MQ):
         
         self.logger.debug('-> Equation=%s, picked values[%s]=\n%s' % (i + 1, actual_equation, self._P[actual_equation]))
         
-        if i > 0: # checking whether the previous equation doesn't match with the current
+        # check whether the previous equation doesn't match with the current
+        if i > 0:
           actual_eq_len = len(self._P[actual_equation]) 
           
           for j in range(1, i + 1): # loop through previous equations
@@ -605,8 +592,7 @@ class STS(MQ):
     
     product = [MQ.VARIABLE_X + '1']
     
-    n += 1
-    for i in range(2, n):
+    for i in range(2, n + 1):
       variable = MQ.VARIABLE_X + str(i)
       product.append(variable)
       
@@ -768,7 +754,7 @@ class MIA(PolynomialBasedTrapdoor):
   3. vygenerovat ireducibilny polynom stupna n
   4. zistit zvysky po deleni pre zvoleny ireducibilny polynom -> napr pre x3 + x + 1 = x1->x1, x2->x2, x3->x + 1, x4->x^2 + x, ...
   5. umocnit vygenerovany vyraz na 2^L + 1
-  6. za labdy stupna vacsieho ako n dosadit zvysky po deleni
+  6. za lambdy stupna vacsieho ako n dosadit zvysky po deleni
   7. roznasobit zatvorky
   8. vyjmut premenne pre dane lambdy
   """
@@ -995,13 +981,13 @@ class HFE(PolynomialBasedTrapdoor):
       b_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
       B[self.X_RAISED_TO + str(power_i)] = set([self.irred_polynomial_rem[b_key]]) # vyber nahodny zvysok po deleni polynomom
       i += 1
-
+    
     a_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
     A[self.X_RAISED_TO + '0'] = set([self.irred_polynomial_rem[a_key]]) # vyber nahodny zvysok po deleni polynomom
     #--------------------------------------------------------------------------#
     HFE = C # just rename
     HFE.update(A) # copy dict A to dict X
-
+    
     for key in B: # copy dict B to dict X
       if key in HFE:
         HFE[key] |= B[key]
@@ -1051,7 +1037,10 @@ def run_test(times=1):
   for test_runs in range(times):
     start = time.time()
     ###################
-    
+    for oil_count in range(4, 11):
+      print('Test case for oil_count = %d' % oil_count)
+      MQ(oil_count * 2 + oil_count , oil_count, UOV(oil_count))
+      print('=========================================')
     ###################
     average += (time.time() - start)
   print(average / times)
@@ -1063,7 +1052,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcNa
 HUMAN_PRINT = 0
 if __name__ == "__main__":
   if 0 == 1:
-    run_test(1000)
+    run_test(1)
     exit(0)
   
   trapdoor = {
@@ -1072,4 +1061,5 @@ if __name__ == "__main__":
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(8, 4, trapdoor['uov'])
+  mq = MQ(3, 4, trapdoor['uov'])
+  MQChallengeFile(mq).store()
