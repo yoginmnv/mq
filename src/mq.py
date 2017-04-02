@@ -11,7 +11,7 @@ from random import choice, randint, shuffle
 from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
-from sage.rings.complex_double import CDF
+import subprocess
 import logging
 import time
 
@@ -28,8 +28,8 @@ class MQ(object):
   set of nonlinear(quadratics) polynomials over a finite field
   
   Attributes:
-    n         -- pocet premennych | count of variables
-    m         -- pocet rovnic | count of equations
+    n (int): pocet premennych | count of variables
+    m (int): pocet rovnic | count of equations
   """
   VARIABLE_X = 'x'
   VARIABLE_Y = 'y'
@@ -51,9 +51,11 @@ class MQ(object):
     
     self.n = n
     self.m = m
-    self.ireducible_polynomial = None # just for MQChallengeFile
+    self.irred_polynomial = None # just for MQChallengeFile
     if isinstance(trapdoor, MIA) or isinstance(trapdoor, HFE):
       self.m = n
+      self.logger.info('Setting m=%d (due %s)' % (self.m, type(trapdoor)))
+    
     self.set_trapdoor(trapdoor)
   
   def set_trapdoor(self, trapdoor):
@@ -64,8 +66,8 @@ class MQ(object):
     if HUMAN_PRINT:
       print('==============================')
     
-    self.S = AffineTransformation(self.n, 'S') # private key
-    self.T = AffineTransformation(self.m, 'T') # private key
+    self.S = AffineTransformation('S', self.n) # private key
+    self.T = AffineTransformation('T', self.m) # private key
     self._PS_product = self.substitute_and_multiply(self.trapdoor._P, self.S.transformation)
     self.T_PS_product = self.substitute(self.T.transformation, self._PS_product) # public key
     
@@ -83,14 +85,19 @@ class MQ(object):
       pprint(self.T_PS_product)
     
   def substitute_and_multiply(self, trapdoor, transformation_s):
+    """
+    Attributes:
+      trapdoor (dictionary of sets): 
+      transformation_s (2d int array): representing Affine transformation S
+    """
     self.logger.debug('Enter ------------------------------')
     result = {}
     
     for key in trapdoor:
-      self.logger.debug('(Key: varible) %s: %s' % (key, equation))
+      self.logger.debug('key: %s: ' % key)
       
       for variable in trapdoor[key]:
-        self.logger.debug('(varialbe: type) %s: %s' % (variable, type(variable)))
+        self.logger.debug('variable: %s' % variable)
 
         if MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
           var = variable.split(MQ.OPERATOR_MUL)
@@ -121,20 +128,29 @@ class MQ(object):
     return result
   
   def substitute(self, transformation_t, _PS):
+    """
+    Attributes:
+      transformation_t (2d int array): representing Affine transformation T
+      _PS (dictionary of sets): 
+    """
     self.logger.debug('Enter ------------------------------')
     result = {}
     
-    for row in range(len(transformation_t)):
-      self.logger.debug('Equation %s' % transformation_t[row])
-      key = MQ.VARIABLE_Y + str(row + 1)
+    index = 1
+    for row in transformation_t:
+      self.logger.debug('Equation %s' % row)
+      key = MQ.VARIABLE_Y + str(index)
+      if key not in _PS:
+        continue
       
-      for variable in transformation_t[row]:
+      for variable in row:
         self.logger.debug('Variable %s' % variable)
         if MQ.VARIABLE_Y in variable[0]:
           self.insert_value_dictionary(result, key, _PS[variable], False)
         else:
           self.insert_value_dictionary(result, key, '1', True)
-    
+      
+      index += 1
     self.logger.info('T o _P o S=%s' % result)
     return result
   
@@ -184,7 +200,7 @@ class AffineTransformation(object):
   Create matrix of dimension n * n over finite field with 2 elements: 0 and 1, and vector n-bits long
   http://doc.sagemath.org/html/en/reference/groups/sage/groups/affine_gps/affine_group.html
   """
-  def __init__(self, degree, transf_type):
+  def __init__(self, transf_type, degree):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of AffineTransformation of degree=%s' % degree)
     
@@ -193,17 +209,17 @@ class AffineTransformation(object):
     if not (transf_type == 'S' or transf_type == 'T'):
       raise ValueError('Transformation type should be either S or T')
     
-    self.group = AffineGroup(degree, GF(2))
     self.transf_type = transf_type
+    self.group = AffineGroup(degree, GF(2))
     self.element = self.group.random_element()
     self.matrix = self.element.A()
     self.vector = self.element.b()
     self.logger.debug('created matrix=%s' % self.matrix)
     self.logger.debug('created vector=%s' % self.vector)
-    self.transformation = self.compute_transformation(degree, transf_type)
+    self.transformation = self.compute_transformation(transf_type, degree)
     # inverzna transformacia ~self.matrix alebo self.matrix.inverse()
     
-  def compute_transformation(self, degree, transf_type):
+  def compute_transformation(self, transf_type, degree):
     self.logger.debug('Enter ------------------------------')
     
     transformation = [[] for row in range(degree)] # self.group.degree()
@@ -217,7 +233,7 @@ class AffineTransformation(object):
       if self.vector[row] == 1:
         transformation[row].append('1')
     
-    self.logger.info('Transformation %s=%s' % (self.transf_type, transformation))
+    self.logger.info('Transformation %s=%s' % (transf_type, transformation))
     return transformation
 
 class MQChallengeFile(object):
@@ -237,7 +253,7 @@ class MQChallengeFile(object):
     self.n = mq.n
     self.m = mq.m
     self.public_key = mq.T_PS_product
-    self.ireducible_polynomial = mq.ireducible_polynomial
+    self.irred_polynomial = mq.irred_polynomial
     #self.triangle = [((i * (i + 1)) / 2) for i in range(n + 2)]
     self.triangle = [0]
     # we need just + 1 but + 2 is for saving computation the matrix column size in method store()
@@ -271,13 +287,13 @@ class MQChallengeFile(object):
     self.logger.info('Storing public key into file %s' % self.filename)
     result = [[0 for column in range(self.triangle[-1])] for row in range(self.m)] 
     
-    f = open(self.filename, 'w')
+    f = open('Toy/' + self.filename, 'w')
     
     if system_type == self.SystemType.TYPE_II or system_type == self.SystemType.TYPE_V:
-      if not self.ireducible_polynomial:
-        raise BaseException('Ireducible polynomial not provided by creating MQChallengeFile object')
+      if not self.irred_polynomial:
+        raise BaseException('Irreducible polynomial not provided by creating MQChallengeFile object')
       else:
-        f.write('Galois Field : GF(2)[%s] / %s\n' % (MQ.VARIABLE_X, self.ireducible_polynomial))
+        f.write('Galois Field : GF(2)[%s] / %s\n' % (MQ.VARIABLE_X, self.irred_polynomial))
     else:
       f.write('Galois Field : GF(%s)\n' % system_type)
     
@@ -373,7 +389,6 @@ class UOV(MQ):
       self.oil = variables[0:oil_count]
       self.vinegar = variables[oil_count:]
     
-    variables.append('1')
     # create product of variables(vinegar*vinegar, vinegar*oil) that may occure in equation
     for i in range(vinegar_count): # loop through all vinegar variables
       for j in range(i + 1, vinegar_count):
@@ -383,6 +398,8 @@ class UOV(MQ):
       for j in range(oil_count): # loop through all oil variables
         # insert product of vinegar and oil variables arranged according to index
         self.insert_value_list(variables, self.vinegar[i], self.oil[j])
+    
+    variables.append('1')
     
     self.logger.info('Vinegar variables %s' % self.vinegar)
     self.logger.info('Oil variables %s' % self.oil)
@@ -394,6 +411,7 @@ class UOV(MQ):
     lottery = [i for i in range(len(variables))]
     i = 1
     while i < (mq.m + 1): # for each equation
+      # SECURITY it depends on shuffle and randint how randomized will be the system
       shuffle(lottery) # shuffle values
       count = randint(c_min, c_max) # random count of variables for equation
       nonlinear = False # ensuring that equation contain nonlinear variable
@@ -746,7 +764,7 @@ class PolynomialBasedTrapdoor(MQ):
 class MIA(PolynomialBasedTrapdoor):
   """
   Matsumoto-Imai
-  use n that is not divisible by 2^n: 4, 8, 16, 32, 64, ...
+  use n that is not divisible by 2^n: 2, 4, 8, 16, 32, 64, ...
   http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html
   
   1. vygenerovat lambdu ak je to mozne -> GCD(2^n - 1, 2^L + 1) == 1
@@ -768,11 +786,11 @@ class MIA(PolynomialBasedTrapdoor):
     self.logger.info('Creating trapdoor for MIA')
     self.mq = mq
     self._lambda = self.compute_lambda()
-    self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
-    self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
+    mq.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
+    self.irred_polynomial_rem = self.compute_remainder(mq.irred_polynomial, MQ.VARIABLE_LAMBDA)
     base_polynomial = self.create_equation(mq.n)
     
-    self.logger.info('Created irreducible polynomial=%s' % self.irred_polynomial)
+    self.logger.info('Created irreducible polynomial=%s' % mq.irred_polynomial)
     # the equation is P'(X) = X ^ (2 ^ labda + 1) we break this into two parts
     
     # first part: a = left_side ^ (2 ^ lambda), will be calculated using the Frobenius automorphisms
@@ -785,7 +803,7 @@ class MIA(PolynomialBasedTrapdoor):
     
     # just renaming keys from L^x to yx
     result = {}
-    for i in range(self.mq.n):
+    for i in range(mq.n):
       result[MQ.VARIABLE_Y + str(i + 1)] = self._P[MQ.LAMBDA_RAISED_TO + str(i)]
     
     self._P = result
@@ -846,15 +864,15 @@ class HFE(PolynomialBasedTrapdoor):
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for HFE')
     self.mq = mq
-    self.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
-    self.irred_polynomial_rem = self.compute_remainder(self.irred_polynomial, MQ.VARIABLE_LAMBDA)
+    mq.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
+    self.irred_polynomial_rem = self.compute_remainder(mq.irred_polynomial, MQ.VARIABLE_LAMBDA)
     base_polynomial = self.create_equation(mq.n)
     
     #count = (2 ** self.mq.n) - 1 # modulo
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
     d_range = range(mq.n, mq.n + 3) # pick d that should be small ?!
     self.d = choice(d_range) # pick random value from range
-    self.logger.debug('Ireducible polynomial=%s, polynomial degree d=%s' % (self.irred_polynomial, self.d))
+    self.logger.debug('Ireducible polynomial=%s, polynomial degree d=%s' % (mq.irred_polynomial, self.d))
     
     HFE = self.create_hfe_polynomial(self.d)
     self.logger.info('Created polynomial in HFE form\n%s' % HFE)
@@ -1033,14 +1051,27 @@ def create_polynomial(elements, degree):
 #if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
 
 def run_test(times=1):
+  logger = logging.getLogger('')
   average = 0
   for test_runs in range(times):
     start = time.time()
     ###################
-    for oil_count in range(4, 11):
-      print('Test case for oil_count = %d' % oil_count)
-      MQ(oil_count * 2 + oil_count , oil_count, UOV(oil_count))
-      print('=========================================')
+    trapdoor = 4
+    for n in range(2, 21):
+      logger.info('Test case for n=%d' % n)
+      if trapdoor == 1:
+        mq = MQ(n * 2 + n , n, UOV(n))
+      elif trapdoor == 2:
+        pass
+      elif trapdoor == 3:
+        if n & (n - 1) == 0:
+          continue
+        mq = MQ(n, 2, MIA())
+      else:
+        mq = MQ(n, 2, HFE())
+      
+      MQChallengeFile(mq).store()
+      logger.info('=========================================')
     ###################
     average += (time.time() - start)
   print(average / times)
@@ -1061,5 +1092,18 @@ if __name__ == "__main__":
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(3, 4, trapdoor['uov'])
+  mq = MQ(3, 4, trapdoor['mia'])
   MQChallengeFile(mq).store()
+  
+  exit(0)
+#  p1 = subprocess.call(["run.sh", "Toy/", "-e"], stdout=subprocess.PIPE)
+#  p2 = subprocess.call(["sed", "-n", "4p"], stdin=p1.stdout, stdout=subprocess.PIPE)
+#  p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
+#  output = p2.communicate()[0]
+
+  output = subprocess.check_output(["run.sh", "Toy/", "-e"])
+  lines = output.split("\n")
+  for i in range(5, 5):
+    print lines[i]
+  
+  subprocess.call(['rm Toy/*.conf Toy/*.mrhs'], shell=True)
