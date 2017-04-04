@@ -13,10 +13,10 @@ setup (
        author='Maroš Polák',
        author_email='xpolakm4 at stuba dot sk',
 
-       #summary = 'Just another Python package for the cheese shop',
-       url='',
-       license='',
-       long_description='Long description of the package',
+       #summary = 'Just another Python package for my diploma thesis',
+       url='https://github.com/yoginmnv/mq/',
+       license='GPL',
+       long_description='Implementation of MQ trapdoors: UOV, STS, MIA, HFE',
 
        # could also include long_description, download_url, classifiers, etc.
 

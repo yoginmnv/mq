@@ -90,5 +90,12 @@ ENV/
 
 # Netbeans files
 nbproject/
-src/nb-configuration.xml
-src/setup.py
+nb-configuration.xml
+
+# Other
+src/grevlex.py
+src/mrhs.1.0.c
+src/readme.txt
+src/romana.py
+src/run.sh
+src/test
