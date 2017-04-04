@@ -6,6 +6,7 @@
 #http://docs.python-guide.org/en/latest/writing/structure/
 #https://github.com/kennethreitz/samplemod
 
+from collections import OrderedDict
 from pprint import pprint
 from random import choice, randint, shuffle
 from sage.all import *
@@ -14,6 +15,7 @@ from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
 import subprocess
 import logging
 import time
+import json
 
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
@@ -246,14 +248,13 @@ class MQChallengeFile(object):
     public_key (dict):
     ireducible_polynomial (set):
   """
+  PATH = 'Toy/'
+  FILENAME = 'toytoy'
+  
   def __init__(self, mq):
     self.logger = logging.getLogger(self.__class__.__name__)
     self.logger.info('Creating instance of MQChallengeFile')
-    self.filename = 'toytoy'
-    self.n = mq.n
-    self.m = mq.m
-    self.public_key = mq.T_PS_product
-    self.irred_polynomial = mq.irred_polynomial
+    self.mq = mq
     #self.triangle = [((i * (i + 1)) / 2) for i in range(n + 2)]
     self.triangle = [0]
     # we need just + 1 but + 2 is for saving computation the matrix column size in method store()
@@ -284,44 +285,45 @@ class MQChallengeFile(object):
     GREVLEX = 'graded reverse lex order'
   
   def store(self, system_type=SystemType.TYPE_I, seed_type=SeedType._0, order_type=OrderType.GREVLEX):
-    self.logger.info('Storing public key into file %s' % self.filename)
-    result = [[0 for column in range(self.triangle[-1])] for row in range(self.m)] 
+    self.logger.info('Storing public key into file %s' % MQChallengeFile.FILENAME)
+    polynomial_matrix = [[0 for column in range(self.triangle[-1])] for row in range(self.mq.m)] 
     
-    f = open('Toy/' + self.filename, 'w')
+    f = open(MQChallengeFile.PATH + MQChallengeFile.FILENAME, 'w')
     
     if system_type == self.SystemType.TYPE_II or system_type == self.SystemType.TYPE_V:
-      if not self.irred_polynomial:
+      if not self.mq.irred_polynomial:
         raise BaseException('Irreducible polynomial not provided by creating MQChallengeFile object')
       else:
-        f.write('Galois Field : GF(2)[%s] / %s\n' % (MQ.VARIABLE_X, self.irred_polynomial))
+        f.write('Galois Field : GF(2)[%s] / %s\n' % (MQ.VARIABLE_X, self.mq.irred_polynomial))
     else:
       f.write('Galois Field : GF(%s)\n' % system_type)
     
-    f.write('Number of variables (n) : %d\n' % self.n)
-    f.write('Number of equations (m) : %d\n' % self.m)
+    f.write('Number of variables (n) : %d\n' % self.mq.n)
+    f.write('Number of equations (m) : %d\n' % self.mq.m)
     f.write('Seed : %d\n' % seed_type)
     f.write('Order : %s\n\n' % order_type)
     f.write('*********************\n')
     
-    for key in self.public_key: # y1, y2, ..., y_m
+    public_key = self.mq.T_PS_product
+    for key in public_key: # y1, y2, ..., y_m
       key_index = int(key[1:]) - 1 # indexing from zero
       
-      for item in self.public_key[key]: # equation for key
+      for item in public_key[key]: # equation for key
         if order_type == self.OrderType.GREVLEX:
           if MQ.OPERATOR_MUL in item:
             # quadratic term:
             (first, second) = item.split(MQ.OPERATOR_MUL)
-            result[key_index][self.triangle[int(second[1:]) - 1] + (int(first[1:]) - 1)] = 1
-          elif MQ.VARIABLE_X in item:
+            polynomial_matrix[key_index][self.triangle[int(second[1:]) - 1] + (int(first[1:]) - 1)] = 1
+          elif MQ.VARIABLE_X in item[0]:
             # linear term:
-            result[key_index][self.triangle[-2] + int(item[1:]) - 1] = 1
+            polynomial_matrix[key_index][self.triangle[-2] + int(item[1:]) - 1] = 1
           else:
             # absolute term: insert at the end
-            result[key_index][self.triangle[-1] - 1] = 1
+            polynomial_matrix[key_index][self.triangle[-1] - 1] = 1
     
-    for row in range(self.m):
+    for row in range(self.mq.m):
       for column in range(self.triangle[-1]):
-        f.write('%d ' % result[row][column])
+        f.write('%d ' % polynomial_matrix[row][column])
       f.write(';\n')
     f.close()
 
@@ -405,9 +407,8 @@ class UOV(MQ):
     self.logger.info('Oil variables %s' % self.oil)
     self.logger.info('Product of variables %s' % variables)
     
-    # TODO opytat sa na max
-    c_min = (mq.n / 2)
-    c_max =  mq.n # len(variables)
+    c_min = oil_count
+    c_max = oil_count * 2
     lottery = [i for i in range(len(variables))]
     i = 1
     while i < (mq.m + 1): # for each equation
@@ -1050,31 +1051,66 @@ def create_polynomial(elements, degree):
 # HFE subs: optimalizacia
 #if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
 
+def compute_estimate(mq):
+  output = subprocess.check_output(["run.sh", "Toy/", "-e"])
+  line = output.split("\n")
+  
+  subprocess.call(['rm Toy/*.conf Toy/*.mrhs'], shell=True)
+  
+  data = OrderedDict([
+    ('trapdoor', str(type(mq.trapdoor))),
+    ('n', mq.n),
+    ('m', mq.m),
+    ('MRHS', OrderedDict([
+      ('n', line[3][18:]),
+      ('m', line[4][18:]),
+      ('l', line[5][18:]),
+      ('k', line[6][18:]),
+      ('Expected count', line[8][18:]),
+      ('XORs', line[10]),
+      ('Expected', lines[10]),
+      ('Solutions', lines[10][11:])
+    ]))
+  ])
+  
+  with open('./tests/out.json', 'a') as outfile:
+    for result in compute_estimate(mq):
+      json.dump(result, outfile, sort_keys=False, indent=4)
+
 def run_test(times=1):
   logger = logging.getLogger('')
   average = 0
   for test_runs in range(times):
-    start = time.time()
-    ###################
-    trapdoor = 4
-    for n in range(2, 21):
-      logger.info('Test case for n=%d' % n)
-      if trapdoor == 1:
-        mq = MQ(n * 2 + n , n, UOV(n))
-      elif trapdoor == 2:
-        pass
-      elif trapdoor == 3:
-        if n & (n - 1) == 0:
-          continue
-        mq = MQ(n, 2, MIA())
-      else:
-        mq = MQ(n, 2, HFE())
-      
-      MQChallengeFile(mq).store()
-      logger.info('=========================================')
-    ###################
-    average += (time.time() - start)
-  print(average / times)
+    for trapdoor in range(1, 4):
+      n_start = 2
+      time_start = time.time()
+      ###################
+      for n in range(n_start, 21):
+        logger.info('Test case for n=%d' % n)
+        if trapdoor == 1:
+          mq = MQ(n * 2 + n , n, UOV(n))
+        elif trapdoor == 2:
+          u = v = n / 2
+          l = u + 1
+
+          ones = [1] * v
+          layer_variables = [u] + ones
+          layer_equation  = ones + [v]
+
+          #mq = MQ(n, n, STS(l, layer_variables, layer_equation))
+        elif trapdoor == 3:
+          if n & (n - 1) == 0:
+            continue
+          mq = MQ(n, 2, MIA())
+        else:
+          mq = MQ(n, 2, HFE())
+
+        #MQChallengeFile(mq).store()
+
+        logger.info('=========================================')
+      ###################
+      time_average += (time.time() - time_start)
+    print(time_average / times)
 
 # levels = NOTSET INFO DEBUG WARNING
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
@@ -1094,16 +1130,3 @@ if __name__ == "__main__":
   }
   mq = MQ(3, 4, trapdoor['mia'])
   MQChallengeFile(mq).store()
-  
-  exit(0)
-#  p1 = subprocess.call(["run.sh", "Toy/", "-e"], stdout=subprocess.PIPE)
-#  p2 = subprocess.call(["sed", "-n", "4p"], stdin=p1.stdout, stdout=subprocess.PIPE)
-#  p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
-#  output = p2.communicate()[0]
-
-  output = subprocess.check_output(["run.sh", "Toy/", "-e"])
-  lines = output.split("\n")
-  for i in range(5, 5):
-    print lines[i]
-  
-  subprocess.call(['rm Toy/*.conf Toy/*.mrhs'], shell=True)
