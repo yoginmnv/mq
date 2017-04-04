@@ -7,15 +7,16 @@
 #https://github.com/kennethreitz/samplemod
 
 from collections import OrderedDict
+from datetime import datetime
 from pprint import pprint
 from random import choice, randint, shuffle
 from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
-import subprocess
-import logging
-import time
 import json
+import logging
+import subprocess
+import time
 
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
@@ -1051,41 +1052,50 @@ def create_polynomial(elements, degree):
 # HFE subs: optimalizacia
 #if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
 
-def compute_estimate(mq):
-  output = subprocess.check_output(["run.sh", "Toy/", "-e"])
-  line = output.split("\n")
-  
-  subprocess.call(['rm Toy/*.conf Toy/*.mrhs'], shell=True)
-  
-  data = OrderedDict([
-    ('trapdoor', str(type(mq.trapdoor))),
-    ('n', mq.n),
-    ('m', mq.m),
-    ('MRHS', OrderedDict([
-      ('n', line[3][18:]),
-      ('m', line[4][18:]),
-      ('l', line[5][18:]),
-      ('k', line[6][18:]),
-      ('Expected count', line[8][18:]),
-      ('XORs', line[10]),
-      ('Expected', lines[10]),
-      ('Solutions', lines[10][11:])
-    ]))
-  ])
-  
-  with open('./tests/out.json', 'a') as outfile:
-    for result in compute_estimate(mq):
-      json.dump(result, outfile, sort_keys=False, indent=4)
+def estimate_complexity():
+  next_obj = False
+  with open("./tests/out" + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ".json", "a") as outfile:
+    outfile.write("[")
+    
+    for mq in run_test():
+      output = subprocess.check_output(["./run.sh", "Toy/", "-e"])
+      line = output.split("\n")
+
+      subprocess.call(["rm Toy/*.conf Toy/*.mrhs"], shell=True)
+
+      data = OrderedDict([
+        ("trapdoor", str(type(mq.trapdoor))),
+        ("n", mq.n),
+        ("m", mq.m),
+        ("MRHS", OrderedDict([
+          ("n", line[3][18:].strip()),
+          ("m", line[4][18:].strip()),
+          ("l", line[5][18:].strip()),
+          ("k", line[6][18:].strip()),
+          ("Expected count", line[8][18:].strip()),
+          ("XORs", line[10]),
+          ("Expected", line[10]),
+          ("Solutions", line[12][11:])
+        ]))
+      ])
+      
+      if next_obj:
+        outfile.write(",")
+      json.dump(data, outfile, sort_keys=False, indent=4)
+      next_obj = True
+    outfile.write("]")
+    outfile.close()
 
 def run_test(times=1):
   logger = logging.getLogger('')
-  average = 0
+  time_average = 0
+  
   for test_runs in range(times):
-    for trapdoor in range(1, 4):
+    for trapdoor in range(1, 2):
       n_start = 2
       time_start = time.time()
       ###################
-      for n in range(n_start, 21):
+      for n in range(n_start, 5):
         logger.info('Test case for n=%d' % n)
         if trapdoor == 1:
           mq = MQ(n * 2 + n , n, UOV(n))
@@ -1105,8 +1115,8 @@ def run_test(times=1):
         else:
           mq = MQ(n, 2, HFE())
 
-        #MQChallengeFile(mq).store()
-
+        MQChallengeFile(mq).store()
+        yield mq
         logger.info('=========================================')
       ###################
       time_average += (time.time() - time_start)
@@ -1122,6 +1132,8 @@ if __name__ == "__main__":
     run_test(1)
     exit(0)
   
+  estimate_complexity()
+  exit(0)
   trapdoor = {
     'uov': UOV(0),
     'sts': STS(2, [2, 2], [2, 2]),
