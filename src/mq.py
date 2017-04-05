@@ -1053,29 +1053,30 @@ def create_polynomial(elements, degree):
 #if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
 
 def estimate_complexity():
-  next_obj = False
-  with open("./tests/out" + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ".json", "a") as outfile:
+  with open("./tests/out" + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ".json", "a", 0) as outfile:
+    next_obj = False
     outfile.write("[")
     
     for mq in run_test():
       output = subprocess.check_output(["./run.sh", "Toy/", "-e"])
-      line = output.split("\n")
-
       subprocess.call(["rm Toy/*.conf Toy/*.mrhs"], shell=True)
-
+      
+      line = output.split("\n")
+      pos = line[10].find("Expected")
+      
       data = OrderedDict([
         ("trapdoor", str(type(mq.trapdoor))),
         ("n", mq.n),
         ("m", mq.m),
         ("MRHS", OrderedDict([
-          ("n", line[3][18:].strip()),
-          ("m", line[4][18:].strip()),
-          ("l", line[5][18:].strip()),
-          ("k", line[6][18:].strip()),
-          ("Expected count", line[8][18:].strip()),
-          ("XORs", line[10]),
-          ("Expected", line[10]),
-          ("Solutions", line[12][11:])
+          ("n", int(line[3][18:].rstrip())),
+          ("m", int(line[4][18:].rstrip())),
+          ("l", int(line[5][18:].rstrip())),
+          ("k", int(line[6][18:].rstrip())),
+          ("Expected count", int(line[8][18:].rstrip())),
+          ("XORs", int(line[10][0:pos - 1].split(" ")[1])),
+          ("Expected", line[10][pos + 10:]),
+          ("Solutions", int(line[12][11:]))
         ]))
       ])
       
@@ -1091,15 +1092,16 @@ def run_test(times=1):
   time_average = 0
   
   for test_runs in range(times):
-    for trapdoor in range(1, 2):
+    for trapdoor in range(1, 5):
       n_start = 2
       time_start = time.time()
       ###################
-      for n in range(n_start, 5):
+      for n in range(n_start, 21):
         logger.info('Test case for n=%d' % n)
         if trapdoor == 1:
           mq = MQ(n * 2 + n , n, UOV(n))
         elif trapdoor == 2:
+          continue
           u = v = n / 2
           l = u + 1
 
@@ -1107,7 +1109,7 @@ def run_test(times=1):
           layer_variables = [u] + ones
           layer_equation  = ones + [v]
 
-          #mq = MQ(n, n, STS(l, layer_variables, layer_equation))
+          mq = MQ(n, n, STS(l, layer_variables, layer_equation))
         elif trapdoor == 3:
           if n & (n - 1) == 0:
             continue
