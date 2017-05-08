@@ -17,6 +17,7 @@ import json
 import logging
 import subprocess
 import time
+import romana
 
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
@@ -54,7 +55,7 @@ class MQ(object):
     
     self.n = n
     self.m = m
-    self.irred_polynomial = None # just for MQChallengeFile
+    self.irred_polynomial = None # just for MQChallenge
     if isinstance(trapdoor, MIA) or isinstance(trapdoor, HFE):
       self.m = n
       self.logger.info('Setting m=%d (due %s)' % (self.m, type(trapdoor)))
@@ -70,10 +71,15 @@ class MQ(object):
       print('==============================')
     
     self.S = AffineTransformation('S', self.n) # private key
-    self.T = AffineTransformation('T', self.m) # private key
     self._PS_product = self.substitute_and_multiply(self.trapdoor._P, self.S.transformation)
-    self.T_PS_product = self.substitute(self.T.transformation, self._PS_product) # public key
     
+    if not isinstance(trapdoor, UOV):
+      self.T = AffineTransformation('T', self.m) # private key
+      self.T_PS_product = self.substitute(self.T.transformation, self._PS_product) # public key
+    else:
+      self.T = self.create_identitiy_matrix(self.m) # private key
+      self.T_PS_product = self.substitute(self.T, self._PS_product) # public key
+        
     if HUMAN_PRINT:
       print('_P')
       pprint(self.trapdoor._P)
@@ -143,12 +149,13 @@ class MQ(object):
     for row in transformation_t:
       self.logger.debug('Equation %s' % row)
       key = MQ.VARIABLE_Y + str(index)
-      if key not in _PS:
-        continue
       
       for variable in row:
         self.logger.debug('Variable %s' % variable)
         if MQ.VARIABLE_Y in variable[0]:
+          if variable not in _PS:
+            continue
+          
           self.insert_value_dictionary(result, key, _PS[variable], False)
         else:
           self.insert_value_dictionary(result, key, '1', True)
@@ -156,6 +163,15 @@ class MQ(object):
       index += 1
     self.logger.info('T o _P o S=%s' % result)
     return result
+  
+  def create_identitiy_matrix(self, degree):
+    """
+    Unbalanced Oil and Vinegar schemes (UOV) omit the affine transformation T
+    but only use S. To fit in our framework, we set it to be the identity 
+    transformation.
+    """
+    self.logger.info('Creating identity matrix of degree=%s' % degree)
+    return [[MQ.VARIABLE_Y + str(row + 1)] for row in range(degree)]
   
   def insert_value_list(self, array, value1, value2):
     """
@@ -239,28 +255,27 @@ class AffineTransformation(object):
     self.logger.info('Transformation %s=%s' % (transf_type, transformation))
     return transformation
 
-class MQChallengeFile(object):
+class MQChallenge(object):
   """
   MQ challenge system https://www.mqchallenge.org/
   
   Args:
-    n (int):
-    m (int):
-    public_key (dict):
-    ireducible_polynomial (set):
+    mq (MQ)
   """
   PATH = 'Toy/'
   FILENAME = 'toytoy'
   
   def __init__(self, mq):
     self.logger = logging.getLogger(self.__class__.__name__)
-    self.logger.info('Creating instance of MQChallengeFile')
+    self.logger.info('Creating instance of MQChallenge')
     self.mq = mq
     #self.triangle = [((i * (i + 1)) / 2) for i in range(n + 2)]
     self.triangle = [0]
-    # we need just + 1 but + 2 is for saving computation the matrix column size in method store()
+    # we need just + 1 but + 2 is for saving computation the matrix column size in method convert()
     for i in range(1, mq.n + 2):
       self.triangle.append(self.triangle[i - 1] + i)
+    
+    self.convert()
   
   class SystemType(object):
     """
@@ -284,26 +299,10 @@ class MQChallengeFile(object):
     """
     LEX = 'lexicographical monomial order'
     GREVLEX = 'graded reverse lex order'
-  
-  def store(self, system_type=SystemType.TYPE_I, seed_type=SeedType._0, order_type=OrderType.GREVLEX):
-    self.logger.info('Storing public key into file %s' % MQChallengeFile.FILENAME)
-    polynomial_matrix = [[0 for column in range(self.triangle[-1])] for row in range(self.mq.m)] 
     
-    f = open(MQChallengeFile.PATH + MQChallengeFile.FILENAME, 'w')
-    
-    if system_type == self.SystemType.TYPE_II or system_type == self.SystemType.TYPE_V:
-      if not self.mq.irred_polynomial:
-        raise BaseException('Irreducible polynomial not provided by creating MQChallengeFile object')
-      else:
-        f.write('Galois Field : GF(2)[%s] / %s\n' % (MQ.VARIABLE_X, self.mq.irred_polynomial))
-    else:
-      f.write('Galois Field : GF(%s)\n' % system_type)
-    
-    f.write('Number of variables (n) : %d\n' % self.mq.n)
-    f.write('Number of equations (m) : %d\n' % self.mq.m)
-    f.write('Seed : %d\n' % seed_type)
-    f.write('Order : %s\n\n' % order_type)
-    f.write('*********************\n')
+  def convert(self, order_type=OrderType.GREVLEX):
+    self.logger.info('Converting public key to MQ Challenge format')
+    self.polynomial_matrix = [[0 for column in range(self.triangle[-1])] for row in range(self.mq.m)]
     
     public_key = self.mq.T_PS_product
     for key in public_key: # y1, y2, ..., y_m
@@ -314,19 +313,41 @@ class MQChallengeFile(object):
           if MQ.OPERATOR_MUL in item:
             # quadratic term:
             (first, second) = item.split(MQ.OPERATOR_MUL)
-            polynomial_matrix[key_index][self.triangle[int(second[1:]) - 1] + (int(first[1:]) - 1)] = 1
+            self.polynomial_matrix[key_index][self.triangle[int(second[1:]) - 1] + (int(first[1:]) - 1)] = 1
           elif MQ.VARIABLE_X in item[0]:
             # linear term:
-            polynomial_matrix[key_index][self.triangle[-2] + int(item[1:]) - 1] = 1
+            self.polynomial_matrix[key_index][self.triangle[-2] + int(item[1:]) - 1] = 1
           else:
             # absolute term: insert at the end
-            polynomial_matrix[key_index][self.triangle[-1] - 1] = 1
+            self.polynomial_matrix[key_index][self.triangle[-1] - 1] = 1
+  
+  def store(self, system_type=SystemType.TYPE_I, seed_type=SeedType._0, order_type=OrderType.GREVLEX):
+    self.logger.info('Storing public key into file %s' % MQChallenge.FILENAME)
     
-    for row in range(self.mq.m):
-      for column in range(self.triangle[-1]):
-        f.write('%d ' % polynomial_matrix[row][column])
-      f.write(';\n')
-    f.close()
+    if not self.polynomial_matrix:
+      self.logger.error('polynomial_matrix is empty')
+    else:
+      f = open(MQChallenge.PATH + MQChallenge.FILENAME, 'w')
+
+      if system_type == self.SystemType.TYPE_II or system_type == self.SystemType.TYPE_V:
+        if not self.mq.irred_polynomial:
+          raise BaseException('Irreducible polynomial not provided by creating MQChallenge object')
+        else:
+          f.write('Galois Field : GF(2)[%s] / %s\n' % (MQ.VARIABLE_X, self.mq.irred_polynomial))
+      else:
+        f.write('Galois Field : GF(%s)\n' % system_type)
+
+      f.write('Number of variables (n) : %d\n' % self.mq.n)
+      f.write('Number of equations (m) : %d\n' % self.mq.m)
+      f.write('Seed : %d\n' % seed_type)
+      f.write('Order : %s\n\n' % order_type)
+      f.write('*********************\n')
+
+      for row in range(self.mq.m):
+        for column in range(self.triangle[-1]):
+          f.write('%d ' % self.polynomial_matrix[row][column])
+        f.write(';\n')
+      f.close()
 
 
 
@@ -1086,6 +1107,7 @@ def estimate_complexity():
       next_obj = True
     outfile.write("]")
     outfile.close()
+    exit(0)
 
 def run_test(times=1):
   logger = logging.getLogger('')
@@ -1101,7 +1123,6 @@ def run_test(times=1):
         if trapdoor == 1:
           mq = MQ(n * 2 + n , n, UOV(n))
         elif trapdoor == 2:
-          continue
           u = v = n / 2
           l = u + 1
 
@@ -1113,16 +1134,16 @@ def run_test(times=1):
         elif trapdoor == 3:
           if n & (n - 1) == 0:
             continue
-          mq = MQ(n, 2, MIA())
+          mq = MQ(n, n, MIA())
         else:
-          mq = MQ(n, 2, HFE())
+          mq = MQ(n, n, HFE())
 
-        MQChallengeFile(mq).store()
+        MQChallenge(mq).store()
         yield mq
         logger.info('=========================================')
       ###################
       time_average += (time.time() - time_start)
-    print(time_average / times)
+    logger.info("Test duration %d[s]" % (time_average / times))
 
 # levels = NOTSET INFO DEBUG WARNING
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
@@ -1134,13 +1155,15 @@ if __name__ == "__main__":
     run_test(1)
     exit(0)
   
-  estimate_complexity()
-  exit(0)
+  #estimate_complexity()
+  n = 3
+  m = 2
   trapdoor = {
-    'uov': UOV(0),
+    'uov': UOV(),
     'sts': STS(2, [2, 2], [2, 2]),
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(3, 4, trapdoor['mia'])
-  MQChallengeFile(mq).store()
+  mq = MQ(n, m, trapdoor['uov'])
+  MQChallenge(mq).store()
+  #romana.convert(mq)
