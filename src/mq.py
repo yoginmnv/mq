@@ -9,7 +9,7 @@
 from collections import OrderedDict
 from datetime import datetime
 from pprint import pprint
-from random import choice, randint, shuffle
+from random import choice, randint, sample, shuffle
 from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
@@ -548,7 +548,42 @@ class STS(MQ):
     self.check_params()
     
     product = self.create_product(mq.n) # x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
-    self.logger.debug('Product of variables=\n%s' % product)
+    self.logger.info('Product of variables=\n%s' % product)
+    
+    triangle = [0]
+    for i in range(1, mq.n + 1):
+      triangle.append(triangle[i - 1] + i)
+    #del triangle[0]
+    self.logger.info('triangle=\n%s' % triangle)
+    
+    equation_index = 0
+    variables_count = 0
+    for layer in range(self.layers_count):
+      variables_new_from = variables_count
+      variables_count += self.variables_in_layer[layer]
+      variables_new_to = variables_count
+      
+      for equation in range(self.equations_in_layer[layer]):
+        equation_index += 1
+        
+#        variables_new_from = triangle[variables_count - 1]
+#        variables_new_to   = triangle[variables_count]
+#        self.logger.info('variables_count=%d, from=%d, to=%d' %(variables_count, variables_new_from, variables_new_to))
+#        self.logger.info('product=%s' % (product[variables_new_from:variables_new_to]) )
+#        res = sample(
+#          product[variables_new_from:variables_new_to],
+#          randint(1, variables_new_to - variables_new_from)
+#        )
+        res = sample(
+          product[triangle[variables_new_from]:triangle[variables_new_to]],
+          randint(1, triangle[variables_new_from] - triangle[variables_new_to])
+        )        
+        self.logger.info('res=%s' % res)
+        self._P[MQ.VARIABLE_Y + str(equation_index)] = set(product[variables_new_from:variables_new_to])
+    
+    self.logger.info('_P\n%s' % self._P)
+    return self._P
+        
     # create list of variables that may occure in result
     # ake premenne sa maju vyskytovat v rovniciach
     should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, mq.n + 1)]
@@ -1283,18 +1318,20 @@ if __name__ == "__main__":
     run_test(1)
     exit(0)
   
-  TEST(range(4, 6), range(10, 15), [10], [zajac.convert])
-  exit(0)
+  #TEST(range(4, 6), range(10, 15), [10], [zajac.convert])
+  #exit(0)
+  
   #estimate_complexity()
-  n = 6
+  n = 4
   m = 4
   trapdoor = {
     'uov': UOV(),
-    'sts': STS(2, [5, 5], [2, 2]),
+    'sts': STS(2, [2, 2], [2, 2]),
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(n, m, trapdoor['uov'])
+  mq = MQ(n, m, trapdoor['sts'])
+  exit(0)
   mc = MQChallenge(mq)
   mc.store()
   zajac.convert(data=mc.polynomial_matrix)
