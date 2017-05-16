@@ -13,11 +13,13 @@ from random import choice, randint, shuffle
 from sage.all import *
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
+import inspect
 import json
 import logging
 import subprocess
 import time
-import romana
+import jamrichova
+import zajac
 
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
@@ -81,12 +83,13 @@ class MQ(object):
       self.T_PS_product = self.substitute(self.T, self._PS_product) # public key
         
     if HUMAN_PRINT:
-      print('_P')
-      pprint(self.trapdoor._P)
       print('Affine transformation S')
       pprint(self.S.transformation)
       print('Affine transformation T')
-      pprint(self.T.transformation)
+      if hasattr(self.T, 'transformation'):
+        pprint(self.T.transformation)
+      else:
+        pprint(self.T)
       print('------------------------------')
       print('_P o S')
       pprint(self._PS_product)
@@ -169,6 +172,8 @@ class MQ(object):
     Unbalanced Oil and Vinegar schemes (UOV) omit the affine transformation T
     but only use S. To fit in our framework, we set it to be the identity 
     transformation.
+    This method creates identity matrix of degree that has been passed as 
+    argument into this method
     """
     self.logger.info('Creating identity matrix of degree=%s' % degree)
     return [[MQ.VARIABLE_Y + str(row + 1)] for row in range(degree)]
@@ -218,6 +223,10 @@ class AffineTransformation(object):
   """
   Create matrix of dimension n * n over finite field with 2 elements: 0 and 1, and vector n-bits long
   http://doc.sagemath.org/html/en/reference/groups/sage/groups/affine_gps/affine_group.html
+  
+  Attributes:
+    transf_type(string): either 'S' or 'T'
+    degree(int): positive number greater than two
   """
   def __init__(self, transf_type, degree):
     self.logger = logging.getLogger(self.__class__.__name__)
@@ -259,8 +268,8 @@ class MQChallenge(object):
   """
   MQ challenge system https://www.mqchallenge.org/
   
-  Args:
-    mq (MQ)
+   Attributes:
+    mq (MQ):
   """
   PATH = 'Toy/'
   FILENAME = 'toytoy'
@@ -300,8 +309,11 @@ class MQChallenge(object):
     LEX = 'lexicographical monomial order'
     GREVLEX = 'graded reverse lex order'
     
-  def convert(self, order_type=OrderType.GREVLEX):
+  def convert(self, system_type=SystemType.TYPE_I, seed_type=SeedType._0, order_type=OrderType.GREVLEX):
     self.logger.info('Converting public key to MQ Challenge format')
+    self.system_type = system_type
+    self.seed_type = seed_type
+    self.order_type = order_type
     self.polynomial_matrix = [[0 for column in range(self.triangle[-1])] for row in range(self.mq.m)]
     
     public_key = self.mq.T_PS_product
@@ -321,26 +333,37 @@ class MQChallenge(object):
             # absolute term: insert at the end
             self.polynomial_matrix[key_index][self.triangle[-1] - 1] = 1
   
-  def store(self, system_type=SystemType.TYPE_I, seed_type=SeedType._0, order_type=OrderType.GREVLEX):
-    self.logger.info('Storing public key into file %s' % MQChallenge.FILENAME)
+  def store(self, filename=""):
+    """
+    stores generated mq public key in MQ Challenge format
+    
+    Attributes:
+      filename(string): name of the created file, if not provided then default value will be euqal to MQChallenge.FILENAME
+    """
+    if filename:
+      self.filename = filename
+    else:
+      self.filename = MQChallenge.FILENAME
+    
+    self.logger.info('Storing public key into file %s' % self.filename)
     
     if not self.polynomial_matrix:
       self.logger.error('polynomial_matrix is empty')
     else:
-      f = open(MQChallenge.PATH + MQChallenge.FILENAME, 'w')
+      f = open(MQChallenge.PATH + self.filename, 'w')
 
-      if system_type == self.SystemType.TYPE_II or system_type == self.SystemType.TYPE_V:
+      if self.system_type == self.SystemType.TYPE_II or self.system_type == self.SystemType.TYPE_V:
         if not self.mq.irred_polynomial:
           raise BaseException('Irreducible polynomial not provided by creating MQChallenge object')
         else:
           f.write('Galois Field : GF(2)[%s] / %s\n' % (MQ.VARIABLE_X, self.mq.irred_polynomial))
       else:
-        f.write('Galois Field : GF(%s)\n' % system_type)
+        f.write('Galois Field : GF(%s)\n' % self.system_type)
 
       f.write('Number of variables (n) : %d\n' % self.mq.n)
       f.write('Number of equations (m) : %d\n' % self.mq.m)
-      f.write('Seed : %d\n' % seed_type)
-      f.write('Order : %s\n\n' % order_type)
+      f.write('Seed : %d\n' % self.seed_type)
+      f.write('Order : %s\n\n' % self.order_type)
       f.write('*********************\n')
 
       for row in range(self.mq.m):
@@ -385,7 +408,7 @@ class UOV(MQ):
     shuffle(variables)
     
     oil_count = self.oil_count
-    # if user doesn`t specify count of oil variables
+    # if user doesn't specify count of oil variables
     if not oil_count:
       if mq.n > 2:
         # ensures that count of vinegar variables will be twice as many as count of oil variables
@@ -397,8 +420,8 @@ class UOV(MQ):
       else:
         # n = 2, n < 2 is treated in MQ class
         oil_count    = vinegar_count = 1
-        self.oil     = variables[0]
-        self.vinegar = variables[1]
+        self.oil     = [variables[0]]
+        self.vinegar = [variables[1]]
     else:
       vinegar_count = mq.n - oil_count
       if vinegar_count < 1:
@@ -412,6 +435,9 @@ class UOV(MQ):
       
       self.oil = variables[0:oil_count]
       self.vinegar = variables[oil_count:]
+    
+    self.oil_count = oil_count
+    self.vinegar_count = vinegar_count
     
     # create product of variables(vinegar*vinegar, vinegar*oil) that may occure in equation
     for i in range(vinegar_count): # loop through all vinegar variables
@@ -476,6 +502,7 @@ class UOV(MQ):
       print variable + ',',
     print('')
 
+    print('_P')
     for variable in self._P:
       print variable + ' =',
       plus = None
@@ -1044,6 +1071,107 @@ class MHRS:
   
   def transform(self):
     pass
+
+class TEST:
+  """
+  performs test on passed trapdoor with function and other arguments
+  
+  Attributes:
+    trapdoor(list): 1 for not secure UOV,
+                    2 for secure UOV,
+                    3 for STS,
+                    4 for MIA,
+                    5 for HFE
+    n(list): passed as argument when creating trapdoor
+    repeat(list): how many times should the test run for given trapdoor with 
+      argument n
+    function(list): arguments to function that will evaluate the given trapdoor
+    file_name(string): name of the file where will be the result stored
+  """
+  def __init__(self, trapdoor=[], n=[], repeat=[], function=[], file_name=""):  
+    self.trapdoor = trapdoor
+    self.n = n
+    self.repeat = repeat
+    self.function = function
+    self.file_name = file_name
+    self.estimate_complexity()
+  
+  def estimate_complexity(self):
+    with open("./tests/test" + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ".txt", "a", 0) as outfile:
+      for trapdoor in self.trapdoor:
+        stop = False
+        
+        for n in self.n:
+          if stop:
+            break
+          average_complexity = 0
+          average_time = 0
+          
+          for test_run in range(self.repeat[0]):
+            time_start = time.time()
+            # ---------------------------------------------------------------- #
+            # UOV not secure
+            if trapdoor == 1:
+              mq = MQ(n, n, UOV())
+            # UOV secure
+            elif trapdoor == 2:
+              n_var = (n * 2 + n)
+              
+              if n_var < 20:
+                mq = MQ(n_var, n, UOV(n))
+              else:
+                stop = True
+                break
+            # STS
+            elif trapdoor == 3:
+              u = v = n / 2
+              l = u + 1
+
+              ones = [1] * v
+              layer_variables = [u] + ones
+              layer_equation  = ones + [v]
+
+              mq = MQ(n, n, STS(l, layer_variables, layer_equation))
+            # MIA
+            elif trapdoor == 4:
+              if n & (n - 1) == 0:
+                stop = True
+                break
+              mq = MQ(n, n, MIA())
+            # HFE
+            elif trapdoor == 5:
+              mq = MQ(n, n, HFE())
+            # Not implemented
+            else:
+              raise BaseException("trapdoor not implemented")
+            # ---------------------------------------------------------------- #
+            for function in self.function:
+              if callable(function):
+                
+                if function is zajac.convert:
+                  mc = MQChallenge(mq)
+                  if isinstance(mq.trapdoor, STS):
+                    logging.info(mc.polynomial_matrix)
+                  
+                  result = zajac.convert(data=mc.polynomial_matrix)
+                  average_complexity += result
+                  time_end = (time.time() - time_start)
+                  if isinstance(mq.trapdoor, UOV) and trapdoor == 2:
+                    outfile.write("%s n=%d, m=%d, complexity=%5d, time=%s\n" % (type(mq.trapdoor), n * 2 + n, n, result, time_end))
+                  else:
+                    outfile.write("%s n=%d, m=%d, complexity=%5d, time=%s\n" % (type(mq.trapdoor), n, n, result, time_end))
+                
+                elif function is jamrichova.convert:
+                  pass
+                else:
+                  raise BaseException("passed function '%s' is not implemented" % (function))
+              else:
+                raise BaseException("passed argument '%s' in function is not function" % (function))
+            
+            average_time += time_end
+          if not stop:
+            test_run += 1.0 # due for loop and to divide as double
+            outfile.write("average complexity=%.1f, average time=%.5f\n\n" % (average_complexity / test_run, average_time / test_run))
   
 def create_polynomial(elements, degree):
   if elements <= 1:
@@ -1121,7 +1249,7 @@ def run_test(times=1):
       for n in range(n_start, 21):
         logger.info('Test case for n=%d' % n)
         if trapdoor == 1:
-          mq = MQ(n * 2 + n , n, UOV(n))
+          mq = MQ(n * 2 + n, n, UOV(n))
         elif trapdoor == 2:
           u = v = n / 2
           l = u + 1
@@ -1155,15 +1283,19 @@ if __name__ == "__main__":
     run_test(1)
     exit(0)
   
+  TEST(range(4, 6), range(10, 15), [10], [zajac.convert])
+  exit(0)
   #estimate_complexity()
-  n = 3
-  m = 2
+  n = 6
+  m = 4
   trapdoor = {
     'uov': UOV(),
-    'sts': STS(2, [2, 2], [2, 2]),
+    'sts': STS(2, [5, 5], [2, 2]),
     'mia': MIA(),
     'hfe': HFE()
   }
   mq = MQ(n, m, trapdoor['uov'])
-  MQChallenge(mq).store()
-  #romana.convert(mq)
+  mc = MQChallenge(mq)
+  mc.store()
+  zajac.convert(data=mc.polynomial_matrix)
+  #jamrichova.convert(mq)
