@@ -548,13 +548,13 @@ class STS(MQ):
     self.check_params()
     
     product = self.create_product(mq.n) # x1, x2, x1*x2, x3, x1*x3, x2*x3, x4, ..., xn
-    self.logger.info('Product of variables=\n%s' % product)
+    self.logger.debug('Product of variables=\n%s' % product)
     
     triangle = [0]
     for i in range(1, mq.n + 1):
       triangle.append(triangle[i - 1] + i)
     #del triangle[0]
-    self.logger.info('triangle=\n%s' % triangle)
+    self.logger.debug('triangle=\n%s' % triangle)
     
     equation_index = 0
     variables_count = 0
@@ -562,94 +562,48 @@ class STS(MQ):
       variables_new_from = variables_count
       variables_count += self.variables_in_layer[layer]
       variables_new_to = variables_count
+      self.logger.debug("from=%d, to=%d" %(variables_new_from, variables_new_to))
       
       for equation in range(self.equations_in_layer[layer]):
         equation_index += 1
         
-#        variables_new_from = triangle[variables_count - 1]
-#        variables_new_to   = triangle[variables_count]
-#        self.logger.info('variables_count=%d, from=%d, to=%d' %(variables_count, variables_new_from, variables_new_to))
-#        self.logger.info('product=%s' % (product[variables_new_from:variables_new_to]) )
-#        res = sample(
-#          product[variables_new_from:variables_new_to],
-#          randint(1, variables_new_to - variables_new_from)
-#        )
-        res = sample(
-          product[triangle[variables_new_from]:triangle[variables_new_to]],
-          randint(1, triangle[variables_new_from] - triangle[variables_new_to])
-        )        
-        self.logger.info('res=%s' % res)
-        self._P[MQ.VARIABLE_Y + str(equation_index)] = set(product[variables_new_from:variables_new_to])
-    
-    self.logger.info('_P\n%s' % self._P)
-    return self._P
+        new_values = set(
+          sample(
+            product[triangle[variables_new_from]:triangle[variables_new_to]],
+            randint(1, triangle[variables_new_to] - triangle[variables_new_from])
+          )
+        )         
+        self.logger.debug('new_values=%s' % new_values)
         
-    # create list of variables that may occure in result
-    # ake premenne sa maju vyskytovat v rovniciach
-    should_contains = [MQ.VARIABLE_X + str(i) for i in range(1, mq.n + 1)]
-    
-    variables_count = 0
-    equation_index  = 1 # store the result keys from y1(y2, y3, ..., yn) not from y0. Otherwise change for loop: for j in range(1, i + 1): # loop through previous equations
-    equations_sum   = 0
-    for layer in range(self.layers_count): # for each layer
-      variables_count += self.variables_in_layer[layer]
-      triangle_number  = (variables_count * (variables_count + 1)) / 2 # compute how many variables can be picked from list product for current count variables in layer
-      self.logger.debug('In layer=%s, count of variables=%s(triangle number=%s), count of equations=%s' % (layer + 1, variables_count, triangle_number, self.equations_in_layer[layer]))
- 
-      # TODO check later this condition
-#      if self.equations_in_layer[layer] > triangle_number: # check if is possible to generate so much equations
-#        raise ValueError('Count of equations in layer ' + str(layer + 1) + ' is more than is possible -> ' + str(triangle_number))
-      
-      sub_product = product[:triangle_number]
-      self.logger.debug('Pick from=%s' % sub_product)
-      shuffle(sub_product)
-      
-      i = 0
-      equations_sum += self.equations_in_layer[layer]
-      while i < self.equations_in_layer[layer]: # for count of equations in layer
-        actual_equation = MQ.VARIABLE_Y + str(equation_index) # create key for dictionary
-        rand = randint(equations_sum, triangle_number) # pick random number from range
-        self._P[actual_equation] = set(sub_product[:rand])
-        
-        # check if created equation contains all variables
-        contain_vars = set(should_contains[:variables_count])
-        for variables in self._P[actual_equation]:
-          contain_vars -= set(variables.split(MQ.OPERATOR_MUL))
-          if len(contain_vars) == 0:
+        # check if equation contains quadratic term, if no add one
+        linear_system = True
+        for value in new_values:
+          if MQ.OPERATOR_MUL in value:
+            linear_system = False
             break
         
-        # ak zostali nejake premenne tak ich treba pridat do rovnice
-        for remaining_vars in contain_vars:
-          self.logger.debug('Adding %s to %s' % (remaining_vars, actual_equation))
-          num = int(remaining_vars[1:])
-          triangle_number_min =  (num - 1) * num / 2
-          triangle_number_max = ((num + 1) * num / 2) - 1
-          self._P[actual_equation] |= set([product[randint(triangle_number_min, triangle_number_max)]])
+        if linear_system:
+          new_values |= set([product[triangle[variables_new_to] - 1]])
+          self.logger.debug('Adding %s to new_values=%s' % (product[triangle[variables_new_to] - 1], new_values))
         
-        self.logger.debug('-> Equation=%s, picked values[%s]=\n%s' % (i + 1, actual_equation, self._P[actual_equation]))
+        if variables_new_from:
+          old_values = set(
+            sample(
+              product[:triangle[variables_new_from]],
+              randint(1, triangle[variables_new_from])
+            )
+          )
+          self.logger.debug('old_values=%s' % old_values)
+          new_values |= old_values
         
-        # check whether the previous equation doesn't match with the current
-        if i > 0:
-          actual_eq_len = len(self._P[actual_equation]) 
-          
-          for j in range(1, i + 1): # loop through previous equations
-            if actual_eq_len == len(self._P[MQ.VARIABLE_Y + str(j)]):
-              if self._P[actual_equation] == self._P[MQ.VARIABLE_Y + str(j)]:
-                self.logger.debug(" x Equation " + str(i + 1) + " equals with equation " + str(j + 1) + " -> creating new equation")
-                i -= 1
-                equation_index -= 1
-        
-        i += 1
-        equation_index += 1
-        shuffle(sub_product)
-    
+        self._P[MQ.VARIABLE_Y + str(equation_index)] = set(new_values)
+     
     self.logger.info('_P=%s' % self._P)
     if HUMAN_PRINT:
       self.human_print()
     
     del product
-    del should_contains
-    del contain_vars
+    del triangle
     
     return self._P
   
@@ -1318,7 +1272,7 @@ if __name__ == "__main__":
     run_test(1)
     exit(0)
   
-  #TEST(range(4, 6), range(10, 15), [10], [zajac.convert])
+  TEST(range(3, 4), range(2, 15), [10], [zajac.convert])
   #exit(0)
   
   #estimate_complexity()
@@ -1330,7 +1284,7 @@ if __name__ == "__main__":
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(n, m, trapdoor['sts'])
+  mq = MQ(n, m, trapdoor['uov'])
   exit(0)
   mc = MQChallenge(mq)
   mc.store()
