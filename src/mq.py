@@ -103,6 +103,7 @@ class MQ(object):
       transformation_s (2d int array): representing Affine transformation S
     """
     self.logger.debug('Enter ------------------------------')
+    computed = {}
     result = {}
     
     for key in trapdoor:
@@ -112,29 +113,90 @@ class MQ(object):
         self.logger.debug('variable: %s' % variable)
 
         if MQ.OPERATOR_MUL in variable: # if contain * we must multiply them
-          var = variable.split(MQ.OPERATOR_MUL)
-          
-          eq1 = transformation_s[int(var[0][1:]) - 1]
-          eq2 = transformation_s[int(var[1][1:]) - 1]
-          for eq1_var in eq1:
-            for eq2_var in eq2:
-              if eq1_var == '1':
-                if eq2_var == '1':
-                  self.insert_value_dictionary(result, key, '1', True)
-                else:
-                  self.insert_value_dictionary(result, key, eq2_var, True)
-              elif eq2_var == '1':
-                self.insert_value_dictionary(result, key, eq1_var, True)
+          if variable in computed:
+            self.logger.debug("variable in computed=%s" % computed[variable])
+            for var in computed[variable]:
+              if key in result:
+                result[key] ^= set([var])
               else:
-                self.insert_value_ordered(result, key, eq1_var, eq2_var, True)
+                result[key] = set([var])
+            #self.insert_value_dictionary(result, key, computed[variable], False)
+            self.logger.debug("variable in result[key]=%s" % result[key])
+          else:
+            var = variable.split(MQ.OPERATOR_MUL)
+
+            eq1 = transformation_s[int(var[0][1:]) - 1]
+            eq2 = transformation_s[int(var[1][1:]) - 1]
+            #self.logger.info('eq1=%s' % eq1)
+            #self.logger.info('eq2=%s' % eq2)
+            for eq1_var in eq1:
+              for eq2_var in eq2:
+                if eq1_var == '1':
+                  if eq2_var == '1':
+                    #self.insert_value_dictionary(result, key, '1', True)
+                    #self.insert_value_dictionary(computed, variable, '1', True)
+                    if variable in computed:
+                      computed[variable] ^= set(['1'])
+                    else:
+                      computed[variable] = set(['1'])
+                  else:
+                    #self.insert_value_dictionary(result, key, eq2_var, True)
+                    #self.insert_value_dictionary(computed, variable, eq2_var, True)
+                    if variable in computed:
+                      computed[variable] ^= set([eq2_var])
+                    else:
+                      computed[variable] = set([eq2_var])
+                    
+                elif eq2_var == '1':
+                  #self.insert_value_dictionary(result, key, eq1_var, True)
+                  #self.insert_value_dictionary(computed, variable, eq1_var, True)
+                  if variable in computed:
+                    computed[variable] ^= set([eq1_var])
+                  else:
+                    computed[variable] = set([eq1_var])
+                else:
+                  #self.insert_value_ordered(result, key, eq1_var, eq2_var, True)
+                  #self.insert_value_ordered(computed, variable, eq1_var, eq2_var, True)
+                  if eq1_var == eq2_var:
+                    if variable in computed:
+                      computed[variable] ^= set([eq1_var])
+                    else:
+                      computed[variable] = set([eq1_var])
+                  elif eq1_var < eq2_var:
+                    if variable in computed:
+                      computed[variable] ^= set([eq1_var + MQ.OPERATOR_MUL + eq2_var])
+                    else:
+                      computed[variable] = set([eq1_var + MQ.OPERATOR_MUL + eq2_var])
+                  else:
+                    if variable in computed:
+                      computed[variable] ^= set([eq2_var + MQ.OPERATOR_MUL + eq1_var])
+                    else:
+                      computed[variable] = set([eq2_var + MQ.OPERATOR_MUL + eq1_var])
+                    
+            self.logger.debug("now computed=%s", computed[variable])
+            for var in computed[variable]:
+              if key in result:
+                result[key] ^= set([var])
+              else:
+                result[key] = set([var])
+            #self.insert_value_dictionary(result, key, computed[variable], False)
+            self.logger.debug("now result=%s", result[key])
         
         elif variable == '1':
-          self.insert_value_dictionary(result, key, '1', True)
+          #self.insert_value_dictionary(result, key, '1', True)
+          if key in result:
+            result[key] ^= set(['1'])
+          else:
+            result[key] = set(['1'])
         
         else:
           for transformation_variable in transformation_s[int(variable[1:]) - 1]:
             self.logger.debug('transformation_variable %s' % transformation_variable)
-            self.insert_value_dictionary(result, key, transformation_variable, True)
+            #self.insert_value_dictionary(result, key, transformation_variable, True)
+            if key in result:
+              result[key] ^= set([transformation_variable])
+            else:
+              result[key] = set([transformation_variable])
     
     self.logger.info('_P o S=%s' % result)
     return result
@@ -155,14 +217,25 @@ class MQ(object):
       
       for variable in row:
         self.logger.debug('Variable %s' % variable)
+        # if processed variable is y_x not 1
         if MQ.VARIABLE_Y in variable[0]:
           if variable not in _PS:
             continue
           
-          self.insert_value_dictionary(result, key, _PS[variable], False)
+          for value in _PS[variable]:
+            self.logger.debug("%s, %s" % (key, value))
+            if key in result:
+              result[key] ^= set([value])
+            else:
+              result[key] = set([value])
+          #self.insert_value_dictionary(result, key, _PS[variable], False)
         else:
-          self.insert_value_dictionary(result, key, '1', True)
-      
+          if key in result:
+            result[key] ^= set(['1'])
+          else:
+            result[key] = set(['1'])
+          #self.insert_value_dictionary(result, key, '1', True)
+          
       index += 1
     self.logger.info('T o _P o S=%s' % result)
     return result
@@ -453,7 +526,7 @@ class UOV(MQ):
     
     self.logger.info('Vinegar variables %s' % self.vinegar)
     self.logger.info('Oil variables %s' % self.oil)
-    self.logger.info('Product of variables %s' % variables)
+    self.logger.debug('Product of variables %s' % variables)
     
     c_min = oil_count
     c_max = oil_count * 2
@@ -543,7 +616,7 @@ class STS(MQ):
     self._P = {}
   
   def create_trapdoor(self, mq):
-    self.logger.info('Creating trapdoor for STS')
+    self.logger.info('Creating trapdoor for STS\nlayers=%d, variables=%s, equations=%s', self.layers_count, self.variables_in_layer, self.equations_in_layer)
     self.mq = mq
     self.check_params()
     
@@ -1061,7 +1134,7 @@ class MHRS:
   def transform(self):
     pass
 
-class TEST:
+class Test:
   """
   performs test on passed trapdoor with function and other arguments
   
@@ -1077,16 +1150,24 @@ class TEST:
     function(list): arguments to function that will evaluate the given trapdoor
     file_name(string): name of the file where will be the result stored
   """
-  def __init__(self, trapdoor=[], n=[], repeat=[], function=[], file_name=""):  
+  def __init__(self, trapdoor=[], n=[], repeat=[], function=[], file_name="", comment=""):
+    self.logger = logging.getLogger(self.__class__.__name__)
     self.trapdoor = trapdoor
     self.n = n
     self.repeat = repeat
     self.function = function
     self.file_name = file_name
+    self.comment = comment
     self.estimate_complexity()
   
   def estimate_complexity(self):
     with open("./tests/test" + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ".txt", "a", 0) as outfile:
+      if self.comment:
+        outfile.write("*****************************************************\n")
+        outfile.write("trapdoors=%s\nn=%s\nrepeat=%s\n" % (self.trapdoor, self.n, self.repeat))
+        outfile.write("%s\n" % self.comment)
+        outfile.write("*****************************************************\n")
+      
       for trapdoor in self.trapdoor:
         stop = False
         
@@ -1097,6 +1178,7 @@ class TEST:
           average_time = 0
           
           for test_run in range(self.repeat[0]):
+            self.logger.info("test run=%d", test_run)
             time_start = time.time()
             # ---------------------------------------------------------------- #
             # UOV not secure
@@ -1107,7 +1189,7 @@ class TEST:
               n_var = (n * 2 + n)
               
               if n_var < 20:
-                mq = MQ(n_var, n, UOV(n))
+                mq = MQ(n_var, n_var, UOV(n))
               else:
                 stop = True
                 break
@@ -1117,6 +1199,9 @@ class TEST:
               l = u + 1
 
               ones = [1] * v
+              if n & 1:
+                u += 1
+                v += 1
               layer_variables = [u] + ones
               layer_equation  = ones + [v]
 
@@ -1161,7 +1246,10 @@ class TEST:
           if not stop:
             test_run += 1.0 # due for loop and to divide as double
             outfile.write("average complexity=%.1f, average time=%.5f\n\n" % (average_complexity / test_run, average_time / test_run))
-  
+    exit(0)
+
+
+
 def create_polynomial(elements, degree):
   if elements <= 1:
     return []
@@ -1272,20 +1360,18 @@ if __name__ == "__main__":
     run_test(1)
     exit(0)
   
-  TEST(range(3, 4), range(2, 15), [10], [zajac.convert])
-  #exit(0)
-  
+  Test(range(1, 6), range(2, 21), [100], [zajac.convert], comment="test") 
   #estimate_complexity()
-  n = 4
-  m = 4
+  
+  n = 3
+  m = 6
   trapdoor = {
     'uov': UOV(),
-    'sts': STS(2, [2, 2], [2, 2]),
+    'sts': STS(2, [2, 3], [2, 3]),
     'mia': MIA(),
     'hfe': HFE()
   }
   mq = MQ(n, m, trapdoor['uov'])
-  exit(0)
   mc = MQChallenge(mq)
   mc.store()
   zajac.convert(data=mc.polynomial_matrix)
