@@ -1169,11 +1169,10 @@ class Test:
         outfile.write("*****************************************************\n")
       
       for trapdoor in self.trapdoor:
-        stop = False
+        latex_graph = []
         
         for n in self.n:
-          if stop:
-            break
+          stop = False
           average_complexity = 0
           average_time = 0
           
@@ -1245,7 +1244,15 @@ class Test:
             average_time += time_end
           if not stop:
             test_run += 1.0 # due for loop and to divide as double
-            outfile.write("average complexity=%.1f, average time=%.5f\n\n" % (average_complexity / test_run, average_time / test_run))
+            ac = average_complexity / test_run
+            at = average_time / test_run
+            outfile.write("average complexity=%.1f, average time=%.5f\n\n" % (ac, at))
+            latex_graph.append([n, ac])
+      
+        outfile.write("Latex graph data\n")
+        for data in latex_graph:
+          outfile.write("(%d, %.1f)" % (data[0], data[1]))
+        outfile.write("\n\n")
     exit(0)
 
 
@@ -1360,7 +1367,7 @@ if __name__ == "__main__":
     run_test(1)
     exit(0)
   
-  Test(range(1, 6), range(2, 21), [100], [zajac.convert], comment="test") 
+  Test(range(1, 5), range(5, 21), [10], [zajac.convert], comment="test") 
   #estimate_complexity()
   
   n = 3
