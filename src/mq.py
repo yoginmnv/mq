@@ -18,8 +18,9 @@ import json
 import logging
 import subprocess
 import time
+
+import mrhs
 import jamrichova
-import zajac
 
 __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
@@ -741,18 +742,18 @@ class PolynomialBasedTrapdoor(MQ):
     irreducible polynomial of degree n over the Gladis field of 2 elements.
     """
     self.logger.debug('Enter ------------------------------')
-    
-    return GF(2)[variable](GF2X_BuildIrred_list(n))
+    return GF(2)[variable].irreducible_element(n, algorithm="first_lexicographic")
+    #return GF(2)[variable](GF2X_BuildIrred_list(n))
   
   def create_random_irreducible_polynomial(self, variable, n):
-    """
+    """    
     http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildRandomIrred_list
     Return the list of coefficients of an irreducible polynomial of degree n 
     of minimal weight over the Gladis field of 2 elements.
     """
     self.logger.debug('Enter ------------------------------')
-    
-    return GF(2)[variable](GF2X_BuildRandomIrred_list(n))
+    return GF(2)[variable].irreducible_element(n, algorithm="random")
+    #return GF(2)[variable](GF2X_BuildRandomIrred_list(n))
   
   def create_equation(self, n):
     """
@@ -763,6 +764,11 @@ class PolynomialBasedTrapdoor(MQ):
     self.logger.debug('Enter ------------------------------')
     
     X = {};
+#    rand_index = randint(2, 2 ** n - 2)
+#    irred_key = MQ.LAMBDA_RAISED_TO + str(rand_index)
+#    for index in range(n):
+#      if irreducible_polynomial[irred_key][index] == 1:
+#        X[MQ.LAMBDA_RAISED_TO + str(index)] = set([MQ.VARIABLE_X + str(index + 1)])
     
     for exponent in range(n):
       X[MQ.LAMBDA_RAISED_TO + str(exponent)] = set([MQ.VARIABLE_X + str(exponent + 1)])
@@ -788,7 +794,7 @@ class PolynomialBasedTrapdoor(MQ):
     
     remainder = {key_raised_to + '0': a ** 0}
     
-    count = (irreducible_polynomial.degree() ** 2) - 1
+    count = (2 ** irreducible_polynomial.degree()) - 1
     for exponent in range(1, count):
       remainder[key_raised_to + str(exponent)] = remainder[key_raised_to + str(exponent - 1)] * a
     
@@ -797,37 +803,65 @@ class PolynomialBasedTrapdoor(MQ):
   def square_polynomial(self, polynomial, times, remainders):
     """
     Raises the polynomial with exponent 2 n-times; polynomial^2^times
+    calculated using the Frobenius automorphismus
+    
+    polynomial(dictionary of sets containing strings)
     """
     self.logger.debug('Enter ------------------------------')
     
     # create copy of dictionary, as we don't want to change it
-    polynomial_copy = {}
+    pol_old = {}
     for key in polynomial:
-      polynomial_copy[key] = polynomial[key].copy()
+      for value in polynomial[key]:
+        pol_old[key] = set([value])
     
-    for counter in range(times): # square polynomial n-times
-      squared_polynomial = {}
-      
-      for key in polynomial_copy: # loop through all keys in dictionary {L^0, L^1, ..., L^(n-1)}
-        # get exponent of actual key and raise them | lambda: L^x
-        exponent = int(key[2:]) * 2
+    # square polynomial n-times
+    for counter in range(times):
+      self.logger.debug("raising %d times" % (counter + 1))
+      pol_new = {}
+    
+      for pol_old_key in pol_old:
+        exponent = int(pol_old_key[2:]) * 2
+        self.logger.debug("z pol_old_key=%s -> do exponent=%d" % (pol_old_key, exponent))
         
         if exponent < self.mq.n:
-          squared_polynomial[MQ.LAMBDA_RAISED_TO + str(exponent)] = polynomial_copy[key]
-        else:
-          remand_keys = str(remainders[MQ.LAMBDA_RAISED_TO + str(exponent)]).split(MQ.VARIABLE_SEPARATOR)
+          self.logger.debug("1 pol_old=%s" % (pol_old))
           
-          for remand_key in remand_keys: # loop through all keys in array
-            if len(remand_key) < 3:
-              remand_key = self.edit_key(remand_key)
-            
-            self.insert_value_dictionary(squared_polynomial, remand_key, polynomial_copy[key], False)
-      
-      polynomial_copy = squared_polynomial
+          for pol_old_value in pol_old[pol_old_key]:
+            insert_key = MQ.LAMBDA_RAISED_TO + str(exponent)
+            if insert_key in pol_new:
+              pol_new[insert_key] ^= set([pol_old_value])
+            else:
+              pol_new[insert_key]  = set([pol_old_value])
+          
+          self.logger.debug("1 pol_new=%s" % (pol_new))
+        else:
+          remainder_keys = str(remainders[MQ.LAMBDA_RAISED_TO + str(exponent)]).split(MQ.VARIABLE_SEPARATOR)
+          self.logger.debug("2 remainder_keys=%s, %s" % (remainder_keys, pol_old[pol_old_key]))
+          
+          for remainder_key in remainder_keys:
+            if len(remainder_key) < 3:
+              remainder_key = self.edit_key(remainder_key)
+              
+            for pol_old_value in pol_old[pol_old_key]:             
+              if remainder_key in pol_new:
+                pol_new[remainder_key] ^= set([pol_old_value])
+              else:
+                pol_new[remainder_key] = set([pol_old_value])
+          
+          self.logger.debug("2 pol_new=%s" % (pol_new))
+        
+      for pol_new_key in pol_new:
+        #for pol_new_value in pol_new[pol_new_key]:
+        pol_old[pol_new_key] = pol_new[pol_new_key]
+      self.logger.debug("====================================================")
     
-    return polynomial_copy
+    return pol_old
   
   def multiply_polynomials(self, left_side, right_side, remainders):
+    """
+    Methond multiplies two polynomials
+    """
     self.logger.debug('Enter ------------------------------')
     
     result = {}
@@ -849,11 +883,12 @@ class PolynomialBasedTrapdoor(MQ):
             if exponent_sum < self.mq.n:
               self.insert_value_ordered(result, key, left_value, right_value, True)
             else:
-              ired_keys = str(self.irred_polynomial_rem[key]).split(MQ.VARIABLE_SEPARATOR)
+              ired_keys = str(remainders[key]).split(MQ.VARIABLE_SEPARATOR)
               
               for ired_key in ired_keys:
                 if len(ired_key) < 3:
                   ired_key = self.edit_key(ired_key)
+                
                 self.insert_value_ordered(result, ired_key, left_value, right_value, True)
               
           self.logger.debug("\n-------------")
@@ -880,13 +915,14 @@ class MIA(PolynomialBasedTrapdoor):
   http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html
   
   1. vygenerovat lambdu ak je to mozne -> GCD(2^n - 1, 2^L + 1) == 1
-  2. vygenerovat vyraz v tvare x1 + x2*L^1 + x3*L^2 + ... x_n*L^n-1
-  3. vygenerovat ireducibilny polynom stupna n
-  4. zistit zvysky po deleni pre zvoleny ireducibilny polynom -> napr pre x3 + x + 1 = x1->x1, x2->x2, x3->x + 1, x4->x^2 + x, ...
-  5. umocnit vygenerovany vyraz na 2^L + 1
-  6. za lambdy stupna vacsieho ako n dosadit zvysky po deleni
-  7. roznasobit zatvorky
-  8. vyjmut premenne pre dane lambdy
+  2. vygenerovat ireducibilny polynom stupna n
+  3. zistit zvysky po deleni pre zvoleny ireducibilny polynom ->
+      napr pre x3 + x + 1 = x1->x1, x2->x2, x3->x + 1, x4->x^2 + x, ...
+  4. vygenerovat vyraz v tvare x1 + x2*L^1 + x3*L^2 + ... x_n*L^n-1
+  5. umocnit vygenerovany vyraz na (2^L + 1)
+  5a. za lambdy stupna vacsieho ako n dosadit zvysky po deleni
+  5b. roznasobit zatvorky
+  6. vyjmut premenne pre dane lambdy
   """
   
   def __init__(self):
@@ -897,26 +933,29 @@ class MIA(PolynomialBasedTrapdoor):
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for MIA')
     self.mq = mq
-    self._lambda = self.compute_lambda()
-    mq.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
+    self._lambda = self.compute_lambda(True)
+    #mq.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
+    mq.irred_polynomial = self.create_random_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
     self.irred_polynomial_rem = self.compute_remainder(mq.irred_polynomial, MQ.VARIABLE_LAMBDA)
     base_polynomial = self.create_equation(mq.n)
     
-    self.logger.info('Created irreducible polynomial=%s' % mq.irred_polynomial)
-    # the equation is P'(X) = X ^ (2 ^ labda + 1) we break this into two parts
+    self.logger.info('_lambda=%d' % (self._lambda))
+    self.logger.info('irred_polynomial=%s' % (mq.irred_polynomial))
+    self.logger.debug('irred_polynomial_rem=%s' % (self.irred_polynomial_rem))
+    # the equation is P'(X) = X ^ ((2^lambda) + 1) we break this into two parts
     
-    # first part: a = left_side ^ (2 ^ lambda), will be calculated using the Frobenius automorphisms
+    # first part: left_side = X ^ (2^lambda), will be squared
     left_side = self.square_polynomial(base_polynomial, self._lambda, self.irred_polynomial_rem)
-    self.logger.info('For lambda=%s computed left side\n%s' % (self._lambda, left_side))
-    self.logger.info('Multipling left side with right side\n%s' % base_polynomial)
+    self.logger.debug('For lambda=%s computed left side\n%s' % (self._lambda, left_side))
+    self.logger.debug('Multipling left side with right side\n%s' % base_polynomial)
     
-    # second part: P'(x) = a * X ^ 1
+    # second part: P'(x) = left_side * X^1 will be multiplied
     self._P = self.multiply_polynomials(left_side, base_polynomial, self.irred_polynomial_rem)
     
     # just renaming keys from L^x to yx
     result = {}
-    for i in range(mq.n):
-      result[MQ.VARIABLE_Y + str(i + 1)] = self._P[MQ.LAMBDA_RAISED_TO + str(i)]
+    for key in self._P:
+      result[MQ.VARIABLE_Y + key[2:]] = self._P[key]
     
     self._P = result
     self.logger.info('_P=%s' % self._P)
@@ -939,27 +978,48 @@ class MIA(PolynomialBasedTrapdoor):
         print values + ' +',
       print('')
   
-  def compute_lambda(self):
+  def compute_lambda(self, first_lambda=False):
     """
     Computes number L, which fulfills the condition 
     GCD((2^n)-1, (2^L)+1) == 1, if this number is not found until the condition 
     (2^n)-1 > (2^L)+1 is fulfilled, where n is degree of polynomial then is
     raised error
+    
+    if lamb == mq.n then square_polynomial return the same base_polynomial
+    Attributes:
+      first_lambda(boolean): 
+      {
+        true: then returns the first lambda that fulfills the condition
+        false: then returns random lambda from all which have fulfilled the condition
+      }
+    
+    Raise:
+      ValueError if any lambda was found
     """
-    self.logger.debug('Enter ------------------------------')
+    self.logger.debug("Enter ------------------------------")
+    result = []
     
     lamb   = 1
     first  = (2 ** self.mq.n) - 1
     second = (2 ** lamb) + 1
     
-    while first > second:
+    while (first > second) and (lamb < self.mq.n):
       if gcd(first, second) == 1:
-        return lamb
+        if first_lambda:
+          return lamb
+        
+        result.append(lamb)
+        if len(result) >= (self.mq.n / 2):
+          break
       
       lamb  += 1
       second = (2 ** lamb) + 1
     
-    raise ValueError('Lambda not found for n=%s' % self.mq.n)
+    if not result:
+      raise ValueError("Lambda not found for n=%s" % (self.mq.n))
+    else:
+      self.logger.debug("result = %s" %(result))
+      return choice(result)
 
 
 
@@ -976,17 +1036,18 @@ class HFE(PolynomialBasedTrapdoor):
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for HFE')
     self.mq = mq
-    mq.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
+    #mq.irred_polynomial = self.create_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
+    mq.irred_polynomial = self.create_random_irreducible_polynomial(MQ.VARIABLE_X, mq.n)
     self.irred_polynomial_rem = self.compute_remainder(mq.irred_polynomial, MQ.VARIABLE_LAMBDA)
     base_polynomial = self.create_equation(mq.n)
     
     #count = (2 ** self.mq.n) - 1 # modulo
     #d_range = range(self.mq.n, (self.mq.n * count) + 1) # pick d that should be small ?!
-    d_range = range(mq.n, mq.n + 3) # pick d that should be small ?!
+    d_range = range(mq.n, mq.n + 2) # pick d that should be small ?!
     self.d = choice(d_range) # pick random value from range
     self.logger.debug('Ireducible polynomial=%s, polynomial degree d=%s' % (mq.irred_polynomial, self.d))
     
-    HFE = self.create_hfe_polynomial(self.d)
+    HFE = self.create_hfe_polynomial(self.d, self.irred_polynomial_rem)
     self.logger.info('Created polynomial in HFE form\n%s' % HFE)
     #--------------------------------------------------------------------------#
     # umocnenie a nasobenie rovnic
@@ -1074,15 +1135,25 @@ class HFE(PolynomialBasedTrapdoor):
         print variable + ' +',
       print('')
     
-  def create_hfe_polynomial(self, degree):
+  def create_hfe_polynomial(self, degree, remainders):
     self.logger.debug('Enter ------------------------------')
     # Let's create polynomial in HFE form
     C = {}
     B = {}
     A = {}
-    i = 0
-    j = 0
     
+    c_rem = [str(i) for i in range(self.mq.n + 1)]
+    c_index = 0
+    shuffle(c_rem)
+    
+    b_rem = [str(i) for i in range(self.mq.n + 1)]
+    b_index = 0
+    shuffle(b_rem)
+    
+    i = 0
+    j = 0   
+
+    self.logger.debug('degree=%d, remainders=%s' % (degree, remainders))
     while True:
       power_i = 2 ** i
       
@@ -1093,28 +1164,40 @@ class HFE(PolynomialBasedTrapdoor):
         power_sum = power_i + (2 ** j)
         
         if power_sum <= degree:
-          self.logger.debug('i=' + str(i) +', j=' + str(j) + ', 2^i + 2^j=' + str(power_sum))
-          c_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
-          c_value = set([self.irred_polynomial_rem[c_key]]) # vyber nahodny zvysok po deleni polynomom
-          x_key = self.X_RAISED_TO + str(power_sum)
+          self.logger.debug('i=%d, j=%d,  2^i + 2^j=%d' % (i, j, power_sum))
+          c_key = MQ.LAMBDA_RAISED_TO + c_rem[c_index]     
+          #c_key = choice(list(remainders.keys())) # random.choice() from keys in dictonary
+          key = MQ.X_RAISED_TO + str(power_sum)
           
-          if x_key in C:
-            C[x_key] ^= set(c_value)
+          if key in C:
+            C[key] ^= set([remainders[c_key]])
           else:
-            C[x_key] = set(c_value)
+            C[key] = set([remainders[c_key]])
           
+          c_index += 1
+          if c_index == self.mq.n:
+            c_index = 0
+            
           j += 1
         else:
           j = 0
           break
       
-      b_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
-      B[self.X_RAISED_TO + str(power_i)] = set([self.irred_polynomial_rem[b_key]]) # vyber nahodny zvysok po deleni polynomom
+      b_key = MQ.LAMBDA_RAISED_TO + b_rem[b_index]  
+      #b_key = choice(list(remainders.keys())) # random.choice() from keys in dictonary
+      B[MQ.X_RAISED_TO + str(power_i)] = set([remainders[b_key]]) # vyber nahodny zvysok po deleni polynomom
+      b_index += 1
+      if b_index == self.mq.n:
+         b_index = 0
+      
       i += 1
     
-    a_key = choice(list(self.irred_polynomial_rem.keys())) # random.choice() from keys in dictonary
-    A[self.X_RAISED_TO + '0'] = set([self.irred_polynomial_rem[a_key]]) # vyber nahodny zvysok po deleni polynomom
+    a_key = choice(list(remainders.keys())) # random.choice() from keys in dictonary
+    A[MQ.X_RAISED_TO + '0'] = set([remainders[a_key]]) # vyber nahodny zvysok po deleni polynomom
     #--------------------------------------------------------------------------#
+    self.logger.debug('A=%s' % (A))
+    self.logger.debug('B=%s' % (B))
+    self.logger.debug('C=%s' % (C))
     HFE = C # just rename
     HFE.update(A) # copy dict A to dict X
     
@@ -1213,6 +1296,9 @@ class Test:
               mq = MQ(n, n, MIA())
             # HFE
             elif trapdoor == 5:
+              if n == 2:
+                stop = True
+                break
               mq = MQ(n, n, HFE())
             # Not implemented
             else:
@@ -1221,12 +1307,12 @@ class Test:
             for function in self.function:
               if callable(function):
                 
-                if function is zajac.convert:
+                if function is mrhs.convert:
                   mc = MQChallenge(mq)
                   if isinstance(mq.trapdoor, STS):
                     logging.info(mc.polynomial_matrix)
                   
-                  result = zajac.convert(data=mc.polynomial_matrix)
+                  result = mrhs.convert(data=mc.polynomial_matrix)
                   average_complexity += result
                   time_end = (time.time() - time_start)
                   if isinstance(mq.trapdoor, UOV) and trapdoor == 2:
@@ -1284,6 +1370,8 @@ def create_polynomial(elements, degree):
 # compute_remainder: spravit v metode nech L a 1 vracia uz ako L^1 a L^0
 # HFE subs: optimalizacia
 #if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
+
+# consider about secure_random = random.SystemRandom()
 
 def estimate_complexity():
   with open("./tests/out" + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ".json", "a", 0) as outfile:
@@ -1367,19 +1455,20 @@ if __name__ == "__main__":
     run_test(1)
     exit(0)
   
-  Test(range(1, 5), range(5, 21), [10], [zajac.convert], comment="test") 
+  Test(range(5, 6), range(10, 21), [100], [mrhs.convert], comment="test") 
   #estimate_complexity()
   
-  n = 3
-  m = 6
-  trapdoor = {
-    'uov': UOV(),
-    'sts': STS(2, [2, 3], [2, 3]),
-    'mia': MIA(),
-    'hfe': HFE()
-  }
-  mq = MQ(n, m, trapdoor['uov'])
-  mc = MQChallenge(mq)
-  mc.store()
-  zajac.convert(data=mc.polynomial_matrix)
-  #jamrichova.convert(mq)
+  for i in range(1):
+    n = 2
+    m = 3
+    trapdoor = {
+      'uov': UOV(),
+      'sts': STS(2, [2, 3], [2, 3]),
+      'mia': MIA(),
+      'hfe': HFE()
+    }
+    mq = MQ(n, m, trapdoor['hfe'])
+    mc = MQChallenge(mq)
+    #mc.store()
+    mrhs.convert(data=mc.polynomial_matrix)
+    #jamrichova.convert(mq)
