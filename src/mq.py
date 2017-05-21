@@ -13,6 +13,9 @@ from datetime import datetime
 from pprint import pprint
 from random import choice, randint, sample, shuffle
 from sage.all import *
+from sage.groups.affine_gps.affine_group import AffineGroup # AffineGroup()
+# the "same" as bellow from sage.rings.finite_rings.all import GF # GF
+from sage.rings.finite_rings.finite_field_constructor import FiniteField as GF # GF
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
 import json
@@ -27,19 +30,32 @@ __author__ = "Maroš Polák"
 __copyright__ = "Copyright (c) 2016 - 2017, Maroš Polák"
 __credits__ = "Viliam Hromada"
 __license__ = "GPL"
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 __email__ = "xpolakm4 at stuba dot sk"
 __status__ = "ready but still in progress"
 
-# levels = NOTSET INFO DEBUG WARNING
+# TODO
+# Optimalizovat HFE
+# HFE ak je d = 4 tak mam zabezpecit aby to vygenerovalo L^4
+#
+# compute_remainder: spravit v metode nech L a 1 vracia uz ako L^1 a L^0
+#
+# vyskusat secure_random = random.SystemRandom()
+#
+# neimportovat vsetko zo sage, lebo to dlho trva
+# skusit najst sposob aby nebol problem z ImportError: cannot import name ZZ
+#
+#if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
+
+# levels = WARNING INFO DEBUG NOTSET
 logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s::%(funcName)s %(message)s')
 
 # pretty print
 HUMAN_PRINT = 0
 
-def main(): 
+def main():
   # main tests that was used as a result in diploma thesis
-  Test(range(1, 6), range(2, 21), [100], [mrhs.convert], comment="test")
+  #Test(range(1, 6), range(2, 21), [100], [mrhs.convert], comment="test")
   
   # sample usage, set size of n, m pick one trapdoor set is as attribute to MQ
   # object store the resulting public key in MQ Challenge format or perform some
@@ -52,11 +68,12 @@ def main():
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(n, m, trapdoor['mia'])
+  mq = MQ(n, m, trapdoor['uov'])
+  #jamrichova.convert(mq)
+  
   mc = MQChallenge(mq)
   #mc.store()
   mrhs.convert(data=mc.polynomial_matrix)
-  #jamrichova.convert(mq)
   
   # previously used as performance tests for tasks
   #if 0 == 1:
@@ -141,7 +158,7 @@ class MQ(object):
         pprint(self.T.transformation)
       else:
         pprint(self.T)
-      print('------------------------------')
+      print('==============================')
       print('_P o S')
       pprint(self._PS_product)
       print('T o _P o S')
@@ -357,7 +374,7 @@ class UOV(MQ):
     }
   
   Raise:
-    BaseException
+    ValueError
     
   Return:
     _P (dictionary): private key
@@ -369,6 +386,8 @@ class UOV(MQ):
     self.oil = []
     self.vinegar = []
     self._P = {}
+    if oil_count < 0:
+      raise ValueError('Count of oil variables must be > 0')
   
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for UOV')
@@ -397,11 +416,11 @@ class UOV(MQ):
       if vinegar_count < 1:
         raise ValueError('Count of vinegar variables is < 1, check setting of params: mq.n, uov.oil_count')
       
-      if vinegar_count < oil_count:
-        self.logger.warning('Scheme is not secure: count of vinegar variables is < count of oil variables')
-      
-      if vinegar_count < (oil_count / 2):
-        self.logger.warning('Scheme may not be secure: count of vinegar variables is not as 2 * count of oil variables')
+      if (vinegar_count / 2) < oil_count:
+        if vinegar_count < oil_count:
+          self.logger.warning('Scheme is not secure: count of vinegar variables is < count of oil variables')
+        else:
+          self.logger.warning('Scheme may not be secure: count of vinegar variables is not as 2 * count of oil variables')
       
       self.oil = variables[0:oil_count]
       self.vinegar = variables[oil_count:]
@@ -475,19 +494,9 @@ class UOV(MQ):
     print 'Olejové premenné:',
     for variable in self.oil:
       print variable + ',',
-    print('')
+    print('\n----------------\n_P=')
 
-    print('_P')
-    for variable in self._P:
-      print variable + ' =',
-      plus = None
-      for eq in self._P[variable]:
-        if plus == None:
-          print eq,
-        else:
-          print '+ ' + eq,
-        plus = 0
-      print('')
+    pprint(self._P)
 
 
 
@@ -518,6 +527,15 @@ class STS(MQ):
     self.variables_in_layer = variables_in_layer
     self.equations_in_layer = equations_in_layer
     self._P = {}
+    
+    if layers_count < 1:
+      raise ValueError('Count of layers must be greater than 0')
+    
+    for (variable, equation) in zip(variables_in_layer, equations_in_layer):
+      if variable < 1:
+        raise ValueError('Count of variables in layer must be greater than 0')
+      if equation < 1:
+        raise ValueError('Count of equations in layer must be greater than 0')    
   
   def create_trapdoor(self, mq):
     self.logger.info('Creating trapdoor for STS\nlayers=%d, variables=%s, equations=%s', self.layers_count, self.variables_in_layer, self.equations_in_layer)
@@ -616,22 +634,11 @@ class STS(MQ):
   
   def human_print(self):
     print self.__class__.__name__
-    print 'Počet premenných =', self.mq.n
-    print 'Počet rovníc =', self.mq.m
-    print 'Počet vrstiev =', self.layers_count
-    print '----------------'
-    #self.variables_in_layer = variables_in_layer
-    #self.equations_in_layer = equations_in_layer
-    for variable in self._P:
-      print variable + ' =',
-      plus = None
-      for eq in self._P[variable]:
-        if plus == None:
-          print eq,
-        else:
-          print '+ ' + eq,
-        plus = 0
-      print('')
+    print('Počet premenných=%d' % (self.mq.n))
+    print('Počet rovníc=%d' % (self.mq.m))
+    print('Počet vrstiev=%d' % (self.layers_count))
+    print('----------------\n_P=')
+    pprint(self._P)
 
 
 
@@ -1379,10 +1386,7 @@ class Test:
               if callable(function):
                 
                 if function is mrhs.convert:
-                  mc = MQChallenge(mq)
-                  if isinstance(mq.trapdoor, STS):
-                    logging.info(mc.polynomial_matrix)
-                  
+                  mc = MQChallenge(mq)                 
                   result = mrhs.convert(data=mc.polynomial_matrix)
                   average_complexity += result
                   time_end = (time.time() - time_start)
@@ -1431,18 +1435,6 @@ def create_polynomial(elements, degree):
       result.append(x_var + str(result[j]))
   
   return result
-
-#1.HFE ak je d = 4 tak mam zabezpecit aby to vygenerovalo L^4
-#2.HFE co znamena nemalo byt nic velke? napisat moznost o ruletovom vybere
-#3.STS netreba teda aby v nasledujucej vrstve boli premenne z predchadzajucej vrstvy len nove premenne
-#4.STS 'Nech v prvej vrstve sú 2 premenné x_1 , x_2', moze byt samostatna rovnica len v tvare x_1*x2=y, alebo tam maju byt vzdy dva cleny ako napr x_1 + x_2 
-#5.UOV pocet olejovych ma byt viac ako octovych alebo naopak? aky pomer? a kolko premennych ma byt v rovnici?
-#
-# compute_remainder: spravit v metode nech L a 1 vracia uz ako L^1 a L^0
-# HFE subs: optimalizacia
-#if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-
-# consider about secure_random = random.SystemRandom()
 
 def estimate_complexity():
   with open("./tests/out" + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ".json", "a", 0) as outfile:
