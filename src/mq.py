@@ -17,7 +17,9 @@ from sage.groups.affine_gps.affine_group import AffineGroup # AffineGroup()
 # the "same" as bellow from sage.rings.finite_rings.all import GF # GF
 from sage.rings.finite_rings.finite_field_constructor import FiniteField as GF # GF
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
+from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildSparseIrred_list
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildRandomIrred_list
+import irreducible_polynomials
 import json
 import logging
 import subprocess
@@ -55,20 +57,20 @@ HUMAN_PRINT = 0
 
 def main():
   # main tests that was used as a result in diploma thesis
-  Test(range(5, 6), range(20, 21), [100], [mrhs.convert], comment="test")
+  #Test(range(5, 6), range(4, 8), [3], [], comment="test")
  
   # sample usage, set size of n, m pick one trapdoor set is as attribute to MQ
   # object store the resulting public key in MQ Challenge format or perform some
   # tests
   n = 4
-  m = 5
+  m = 4
   trapdoor = {
     'uov': UOV(),
     'sts': STS(2, [2, 3], [2, 3]),
     'mia': MIA(),
     'hfe': HFE()
   }
-  mq = MQ(n, m, trapdoor['hfe'])
+  mq = MQ(n, m, trapdoor['uov'])
   #jamrichova.convert(mq)
   
   mc = MQChallenge(mq)
@@ -646,30 +648,37 @@ class PolynomialBasedTrapdoor(MQ):
   last_n = 0
   equation = 0
   polyonomial = 0
+  #ip = IrreduciblePolynomials(MQ.VARIABLE_X)
   
   def create_irreducible_polynomial(self, variable, n):
     """
     http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildIrred_list
     Return the list of coefficients of the lexicographically smallest 
     irreducible polynomial of degree n over the Gladis field of 2 elements.
+    
+    Args:
+      n(int): positive number greather than 1
     """
     self.logger.debug('Enter')
     #return GF(2)[variable].irreducible_element(n, algorithm="first_lexicographic")
     PBT = PolynomialBasedTrapdoor
     
-    if PBT.last_n != n and not PBT.polyonomial:
-      PBT.last_n = n
-      PBT.polyonomial = GF(2)[variable](GF2X_BuildIrred_list(n))
+    if PBT.last_n == n: # rely on that n is positive number greater than 1
       return PBT.polyonomial
     else:
+      PBT.last_n = n
+      #PBT.polyonomial = GF(2)[variable].irreducible_element(n, algorithm="first_lexicographic")
+      PBT.polyonomial = GF(2)[variable](GF2X_BuildIrred_list(n))
       return PBT.polyonomial
-    
   
   def create_random_irreducible_polynomial(self, variable, n):
     """    
     http://doc.sagemath.org/html/en/reference/polynomial_rings/sage/rings/polynomial/polynomial_gf2x.html#sage.rings.polynomial.polynomial_gf2x.GF2X_BuildRandomIrred_list
     Return the list of coefficients of an irreducible polynomial of degree n 
     of minimal weight over the Gladis field of 2 elements.
+    
+    Args:
+      n(int): positive number greather than 1
     """
     self.logger.debug('Enter')
     #return GF(2)[variable].irreducible_element(n, algorithm="random")
@@ -682,22 +691,21 @@ class PolynomialBasedTrapdoor(MQ):
     Return equation in form x_1*Alpha^0 + x_2*Alpha^1 + ... + x_n*Alpha^(n-1),
     transformed into dictionary where keys are Alphas as strings 
     (MQ.VARIABLE_LAMBDA + MQ.OPERATOR_POWER + exponent) i.e. L^2
+    
+    Args:
+      n(int): positive number greather than 1
     """
     self.logger.debug('Enter')
     PBT = PolynomialBasedTrapdoor
     
-    if PBT.last_n != n and not PBT.equation:
+    if PBT.last_n == n:
+      return PBT.equation
+    else:
       PBT.last_n = n
-      PBT.equation = {}
+      PBT.equation = {} # or just add (n - PBT.last_n) variables if n > PBT.last_n
       for exponent in range(n):
         PBT.equation[MQ.LAMBDA_RAISED_TO + str(exponent)] = set([MQ.VARIABLE_X + str(exponent + 1)])
       return PBT.equation
-    else:
-      return PBT.equation
-    
-    
-    
-    return X
   
   def compute_remainder(self, irreducible_polynomial, key, all_remainders):
     """
@@ -705,8 +713,8 @@ class PolynomialBasedTrapdoor(MQ):
     over its size
     
     Args:
-      irreducible_polynobmial (type sage.rings.polynomial.polynomial_gf2x.Polynomial_GF2X): polynomial that is used in trapdoor
-      key (string): string that will be used as keys for the result dictionary
+      irreducible_polynobmial(sage.rings.polynomial.polynomial_gf2x.Polynomial_GF2X): polynomial that is used in trapdoor
+      key(string): string that will be used as keys for the result dictionary
     """
     self.logger.debug('Enter')
     
@@ -1426,6 +1434,7 @@ class Test:
             else:
               raise BaseException('trapdoor not implemented')
             # ---------------------------------------------------------------- #
+            time_end = 0
             for function in self.function:
               if callable(function):
                 
